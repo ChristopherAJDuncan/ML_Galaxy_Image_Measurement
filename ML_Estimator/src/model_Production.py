@@ -17,7 +17,7 @@ def default_ModelParameter_Dictionary(**setters):
     '''
 
     imgshape = np.array([10, 10])
-    dct = dict(size = 3., e1 = 0., e2 = 0., centroid = (np.array(imgshape)+1)/2., flux = 1.e5, magnification = 1., shear = [0., 0.], noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., modelType = 'gaussian')
+    dct = dict(size = 3., e1 = 0., e2 = 0., centroid = (np.array(imgshape)+1)/2., flux = 1.e3, magnification = 1., shear = [0., 0.], noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 3., modelType = 'gaussian')
 
     for kw in setters.keys():
         if kw not in dct:
@@ -98,7 +98,7 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
 
     NOTE:
     -- If sbProfileFunc is passed, then in the cases where the galaxy is large/elliptical enough that the profile extends (is non-zero) beyond the postage stamp size passed in, then the efective flux assigned using the sbProfileFunc method is different to the GALSIM default. This is because the GALSIM default assigns flux by integrating over the whole model, thus the sum of pixels within the PS will be smaller than the acual flux. In contrast, whilst the sbProfileFunc assigns a total flux in the SB profile function itself, the pixel counts assigned by GALSIM aim to get sum(image) = flux within the PS: thus the latter assumes that the whole SB profile fits within the image.
-    -- The use of ``enlargementFactor'' allows the analytic, user-specified 
+    -- The use of ``enlargementFactor'' allows the analytic, user-specified SB profile to be evaluated on effectively a larger grid, so that the flux assigned is indeed the total flux, and not the total flux within the postage stamp. The residual to the GALSIM default Gaussian class is verified to <~1% for the circular case, but not for any case with ellipticty (15th June 2015 cajd)
 
     
     '''
@@ -115,7 +115,7 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
     '''
     Non-Parametric model fitting - user-defined surface profile method. Can be used to define pixleised derivatives of user-defined SB profile
     Alternative method is to specify the model on a fine grid, and set as galsim image, then as GSObject which is an interpolated image. Use this method if evaluating pixelsised version of the derivative of the SB profile
-    Fucntion will be evaluated on a finer grid than the final version. This shold be quick since entireley analytic, therefore should not matter how fine the grid is
+    Function will be evaluated on a finer grid than the final version. This shold be quick since entireley analytic, therefore should not matter how fine the grid is
     '''
     if(sbProfileFunc is not None):
         ## 19th May 2015: Known that this implementation does not work yet. Pixel scale needed for image. Ignored for now.
@@ -123,24 +123,19 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
         if(Verbose):
             print '\n Constructing GALSIM image using user-defined function \n'
             
-        finegridFactor = 1 ##Should be integer. Defines how much finer the intial evaluation is
-        if(finegridFactor < 1):
-            raise ValueError('get_Pixelised_Model - Interpoalted Image method - finegridFactor invalid')
-
-        ##Set enlargmentFactor, which sets the size of the grid over which the SB profile to be interpolated is produced. This ensures that if the PS is too small to contain the full SB profile, the flux is set consistently to the total flux of the profile, and not just the flux which falls within the PS. Ideally, enlargement factor should be set to n*sigma*() along the major axis of the image
-        enlargementFactor = 10
+        ##Set enlargmentFactor, which sets the size of the grid over which the SB profile to be interpolated is produced. This ensures that if the PS is too small to contain the full SB profile, the flux is set consistently to the total flux of the profile, and not just the flux which falls within the PS. Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, and this can be turned off by setting enlargementFactor = 1.
+        enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
+        print 'Enlargement Factor is:', enlargementFactor
         tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
 
         ##Evaluate user-defined function on a fine grid
-        xy = [np.linspace(1, tempStampSize[0], finegridFactor*(tempStampSize[0])), \
-              np.linspace(1, tempStampSize[1], finegridFactor*(tempStampSize[1]))]
+        xy = [np.linspace(1, tempStampSize[0], tempStampSize[0]), \
+              np.linspace(1, tempStampSize[1], tempStampSize[1])]
 
         ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
         #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
         
-        ##Rescale centroid by finegridFactor also. Verified to work where centroid is central on postage stamp.
-        ## Use of this version allows the model (matched to the image) to be off-centre, and is therefore more appropriate in the application to data, however ** the centroid needs to be properly set in this case **
-        cen = iParams['centroid']*finegridFactor
+        cen = iParams['centroid']
 
         ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
         ## This could also be done dy readjusting according to distance from centre.
@@ -148,12 +143,12 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
         cen[0] = cen[0] + lOffset
         cen[1] = cen[1] + rOffset
 
-        ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == finegridFactor*(enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
+        ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
 
         sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'])
 
-        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1./finegridFactor), flux = iParams['flux'], normalization = 'flux')
-
+        ## Should this be pixel_scale?
+        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.), flux = iParams['flux'], normalization = 'flux')
 
     elif(iParams['modelType'].lower() == 'gaussian'):
         
