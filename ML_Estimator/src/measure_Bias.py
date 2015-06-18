@@ -10,6 +10,9 @@ debug = False
 import numpy as np
 
 def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imageParams, order = 1, diffType = 'numeric'):
+    import src.model_Production as modPro
+    import src.surface_Brightness_Profiles as SBPro
+    from derivatives import finite_difference_derivative
     '''
     Returns the theoretically motivated ML estimator bias due to finite data sample. First instance only calculates the linear bias. This is only applicable to the case where the estimate is taken as the ML point of a Gaussian Likelihood function, or minimising chi^2, and where the noise variance is uniform across the stamp.
 
@@ -32,9 +35,7 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     
     Returns: bias to stated order.
     '''
-    
-    import model_Production as modPro
-    from derivatives import finite_difference_derivative
+
 
     pVal = parameter_value; pLab = parameter_label
 
@@ -47,7 +48,10 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
         diffIm = finite_difference_derivative(modPro.get_Pixelised_Model_wrapFunction, pVal, args = [iParams, pLab, 1], n = [1,2], dx = [0.001, 0.001], order = 5, eps = 1.e-3, convergenceType = 'sum', maxEval = 100)
     elif diffType.lower() == 'analytic' or diffType.lower() == 'ana':
         ## Get fully analytic derivative
-        raise RuntimeError('analytic_GaussianLikelihood_Bias - I have not yet coded up a fully analytic way of obtaining derivatives of the model image')
+        print 'Analytic derivatives centroid placed at:', iParams['centroid'] 
+        diffIm = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams,pLab,  noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab, pLab])]
+        #diffIm = modPro.get_Pixelised_Model(iParams, noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der) ##Add args to set derivatives
+        #raise RuntimeError('analytic_GaussianLikelihood_Bias - I have not yet coded up a fully analytic way of obtaining derivatives of the model image')
     else:
         raise RuntimeError('analytic_GaussianLikelihood_Bias - Invalid differential type (diffType) entered:'+diffType)
 
@@ -57,6 +61,7 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     ## get prefactor : (sigma^2)/(2 n^2)
     preFactor = (imageParams['noise']*imageParams['noise'])/(2.*nPix*nPix)
     # get bias as prefactor*(sum I' * I'')/ (sum I' ^2)^2
+    print 'bias value check:', (diffIm[0]*diffIm[1]).sum(), diffIm[0].sum(), diffIm[1].sum(), diffIm[0].shape, diffIm[1].shape
     bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[1],2.).sum(), 2.); bias *= preFactor
 
     return bias

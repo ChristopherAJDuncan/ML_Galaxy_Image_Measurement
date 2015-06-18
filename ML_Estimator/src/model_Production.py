@@ -44,7 +44,7 @@ def unpack_Dictionary(dict, requested_keys = None):
 
 
 ##-------------------------Model Production-----------------------------------------##
-def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1):
+def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs):
     '''
     ##Wrapper function for get Pixelised model, which returns the image according to Params, where parameter with key 'xKey' is set to value 'x'
 
@@ -70,14 +70,14 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1):
     
     Params[xKey] = x
 
-    image, Params = get_Pixelised_Model(Params)
+    image, Params = get_Pixelised_Model(Params, **kwargs)
 
     if returnOrder == 1:
         return image
     else:
         return image, Params
 
-def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose = True, outputImage = False):
+def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
     import time
     import math
     import os
@@ -100,12 +100,18 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
     -- If sbProfileFunc is passed, then in the cases where the galaxy is large/elliptical enough that the profile extends (is non-zero) beyond the postage stamp size passed in, then the efective flux assigned using the sbProfileFunc method is different to the GALSIM default. This is because the GALSIM default assigns flux by integrating over the whole model, thus the sum of pixels within the PS will be smaller than the acual flux. In contrast, whilst the sbProfileFunc assigns a total flux in the SB profile function itself, the pixel counts assigned by GALSIM aim to get sum(image) = flux within the PS: thus the latter assumes that the whole SB profile fits within the image.
     -- The use of ``enlargementFactor'' allows the analytic, user-specified SB profile to be evaluated on effectively a larger grid, so that the flux assigned is indeed the total flux, and not the total flux within the postage stamp. The residual to the GALSIM default Gaussian class is verified to <~1% for the circular case, but not for any case with ellipticty (15th June 2015 cajd)
 
+    ISSUES:
+    -- Where the sbProfileFunc does not correspond to a traditional surface brightness profile (e.g. when considering derivatives), then there may the the unusual case where the flux defined as the sum over the surface brightness grid is within machin precision of zero. In this case, when trying to define a GALSIM interpolated image object, the assertion "abs(flux - flux_tot) < abs(flux_tot)" will fail and GALSIM will crash. This is hacked in the following code by adding a constant flux sheet to the SB profile and subtracting this off. HOWEVER, it is known that this gives large differences in the returned pixelised SB profile when the additionalConstantFlux is large. For the case considered here, it is set to be small, and only small (sub%) deviations have been observed in the tests I have applied.
     
     '''
     import galsim
 
     ##Set up copy of Params to avoid overwriting input. As the copy is output, the original can be overwritten by self-referencing on runtime
     iParams = Params.copy()
+
+    ##additionalConstantFlux is used in certain cases to allow GALSIM to deal with cases where the total flux is close to zero
+    #Q: If the flux normalisation is arbirarily shifted, how is the PSF and pixel response function-convolved final image affected.
+    additionalConstantFlux = 0
 
     ##Set up random deviate, which is used to set noise on image
     if(noiseType is not None):
@@ -124,9 +130,11 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
             print '\n Constructing GALSIM image using user-defined function \n'
             
         ##Set enlargmentFactor, which sets the size of the grid over which the SB profile to be interpolated is produced. This ensures that if the PS is too small to contain the full SB profile, the flux is set consistently to the total flux of the profile, and not just the flux which falls within the PS. Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, and this can be turned off by setting enlargementFactor = 1.
+        ## NOTE: it is not recommended to turn off enlargementFactor, since the use of the interpolated image can differ to GALSIM default by a large amount depending on how the renormalisation factor is used when defining the interpolated image
         enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
-        print 'Enlargement Factor is:', enlargementFactor
         tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
+        print 'enlargement factor is:', enlargementFactor, tempStampSize
+
 
         ##Evaluate user-defined function on a fine grid
         xy = [np.linspace(1, tempStampSize[0], tempStampSize[0]), \
@@ -145,10 +153,29 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
 
         ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
 
-        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'])
+        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
 
-        ## Should this be pixel_scale?
-        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.), flux = iParams['flux'], normalization = 'flux')
+         #Use to debug the form of the surface brightness profile
+        import pylab as pl
+        f = pl.figure()
+        ax = f.add_subplot(111)
+        im = ax.imshow(sb)
+        pl.colorbar(im)
+        print 'SB flux check:', sb.sum()
+        pl.show()
+
+        ## Set up as a GALSIM interpolated image. To do this, one must set the flux normalisation value. How this is done is an open question: setting it to sb.sum assumes that the sb is constructed on a pixel scale, and that the full flux of the image is contained in the postage stamp, or it may mean that the flux only reflects that which is contained in the PS and thus is not rescaled to contain the full model flux. Setting it to iParams['flux'] may cause unwanted renormalisation in the image if the PS is too small to contain the entire model.
+        ## Note, use of the Guassian model with no ellipticity agrees with GALSIM in both cases to sub-% *if enlargementFactor is used*. If not, then differences (GALSIM_Default - Interpolated)  can be as large as : -20 per pixel, factor of 3 in PS flux using flux =  sb.sum(), and -10:60 per pixel, factor of 1.01 in PS flux using flux = iParams['flux'] (10x10, rs = 6.)
+
+        if(np.absolute(sb.sum()) < 10**(-11)):
+            additionalConstantFlux = (2.*10.**(-11))/np.prod(sb.shape)
+
+            if(Verbose):
+                print 'Using additional flux due to machine precision requirements in use of GALSIM'
+
+        sb += additionalConstantFlux
+        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.), flux = sb.sum())
+        sb -= additionalConstantFlux
 
     elif(iParams['modelType'].lower() == 'gaussian'):
         
@@ -192,8 +219,8 @@ def get_Pixelised_Model(Params, noiseType = None, sbProfileFunc = None, Verbose 
         
         #image.addNoise(noise) #also image.addNoiseSNR(noise, snr = )...
 
-        
-    aimage = image.array
+    ## additionalConstantFlux is subtracted to remove constant shhet of flux applied for certain machine-precision cases
+    aimage = image.array - additionalConstantFlux
     
     ##If debugging, plot pixelised galaxy image
     if(debug or outputImage):
@@ -260,14 +287,15 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
     
     '''
 
-    delR = np.absolute([xy[0]-cen[0], xy[1]-cen[1]]) #[delX, delY]
+    #delR = np.absolute([xy[0]-cen[0], xy[1]-cen[1]]) #[delX, delY]
+    delR = [xy[0]-cen[0], xy[1]-cen[1]] #[delX, delY]
 
     SB = np.zeros((xy[0].shape[0], xy[1].shape[0]))
 
     ##Set up deformation matrix
     Q = sigma*sigma*np.array([[1.-e1, e2],[e2,1+e1]])
-    detQ = sigma*sigma*(1. - e1*e1 - e2*e2) 
-    QIn = np.array([[1.+e1,-e2],[-e2,1-e1]])/detQ
+    detQ = (sigma**4.)*(1. - e1*e1 - e2*e2) 
+    QIn = (sigma**2.)*np.array([[1.+e1,-e2],[-e2,1-e1]])/detQ
 
     ##Can this be edited to remove the loop?
     chi2 = np.zeros((xy[0].shape[0], xy[1].shape[0]))
@@ -276,7 +304,7 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
             chi2[i,j] = -0.5*(delR[0][i]*QIn[0,0]*delR[0][i] + delR[0][i]*QIn[0,1]*delR[1][j] + \
                               delR[1][j]*QIn[1,0]*delR[0][i] + delR[1][j]*QIn[1,1]*delR[1][j]  )
 
-    norm = Itot/(2.*pi*detQ)
+    norm = Itot/(2.*pi*np.sqrt(detQ))
 
     SB = norm*np.exp(chi2)
     
