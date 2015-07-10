@@ -33,6 +33,47 @@ import os
 verbose = False
 debug = False
 
+def estimate_Noise(image, maskCentroid = None):
+    '''
+    Routine which takes in an image and estiamtes the noise on the image, needed to accurately calculate the expected bias on profile measurements
+
+    First iteration only looks for the mean varaince in pixel value, not taking into account image subtraction
+
+    In reality, the noise should be estimated after subtraction of the source, which may also be done by masking out the source centre and taking the std on the background only (assuming constant sky backgroun)
+
+    Agrees well with GALSIM noise var on all SNR provided masCentroid is accurately placed on source centre (tested for ellipticity = 0.)
+
+    Requires:
+    -- image: Image of source (2-dimensional numpy array)
+    -- maskCentroid: center of mask - used to iteritively mask out source to get an accurate estimate of the background noise after removing the source. If None, then the noise is returned as the standard deviation of the image without masking applied. If not None, then the noise is minimum of the difference between successive runs where the mask is increased by one pixel each side of the centre as passed in.
+    '''
+    if(maskCentroid is not None):
+        res = np.zeros(max(maskCentroid[0], maskCentroid[1], abs(image.shape[0]-maskCentroid[0]), abs(image.shape[1]-maskCentroid[1])))
+    else:
+        res = np.zeros(1)
+        
+    maskRad = 0; con = 0
+    tImage = image.copy()
+    while True:
+        con += 1
+
+        maskRad = (con-1)*1 #Done in pixels
+
+        if(maskCentroid is not None):
+            tImage[maskCentroid[0]-maskRad:maskCentroid[0]+maskRad, maskCentroid[1]-maskRad:maskCentroid[1]+maskRad] = 0.
+
+        res[con-1] = tImage.std()
+
+        if(maskCentroid == None):
+            break
+        elif(con == res.shape[0]):
+            break
+
+    if(maskCentroid is not None):
+        return res[np.argmin(np.absolute(np.diff(res)))]
+    else:
+        return res[0]
+    
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
 def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, **iParams):
     import scipy.optimize as opt
@@ -66,7 +107,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     Model Parameter entry: Model Parameters can be entered using two methods
     setParams: Full Dictionary of initial guess/fixed value for set of parameters. If None, this is set to default set. May not be complete: if not, then model parameters set to default as given in default_ModelParameter_Dictionary()
-    iParams: generic input which allows model parameters to beset individually. Keys not set are set to default as given by default_ModelParameter_Dictionary(). Where an iParams key is included in the default dictionary, or setParams, it will be updated to this value (**therefore iParams values have preferrence**). If key not present in default is entered, it is ignored
+    iParams: generic input which allows model parameters to be set individually. Keys not set are set to default as given by default_ModelParameter_Dictionary(). Where an iParams key is included in the default dictionary, or setParams, it will be updated to this value (**therefore iParams values have preferrence**). If key not present in default is entered, it is ignored
 
     Side Effects:
 
@@ -119,10 +160,6 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         print 'DEBUG: Testing intial parameter state: GALSIM call'
         model, modelParams = modPro.get_Pixelised_Model(modelParams)
 
-    ## Measure pixel noise on image - Method is independent of this provided no spatial correlations
-    print 'CODE DOES NOT YET MEASURE PIXEL NOISE'
-    modelParams['noise'] = 778.
-
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
@@ -172,8 +209,9 @@ def get_logLikelihood(parameters, pLabels, image, setParams, returnType = 'sum')
 
     ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
     if(~(hasattr(parameters, "__iter__") or hasattr(pLabels, "__iter__"))):
-       #Both not iterable
-       parameters = [parameters]; pLabels = [pLabels]
+       #Both not iterable !!!!EDIT BACK
+       parameters = parameters; pLabels = pLabels
+       ##parameters = [parameters]; pLabels = [pLabels]
     elif(~hasattr(parameters, "__iter__") or ~hasattr(pLabels, "__iter__")):
        ##Only one not iterable: suggests that one is a form of list whilst the other is not: non-conformal array length
        raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test)')

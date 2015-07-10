@@ -35,9 +35,10 @@ def unpack_Dictionary(dict, requested_keys = None):
 
     if(requested_keys is None):
         requested_keys = dict.keys()
-    elif(~hasattr(requested_keys, "__iter")):
+    elif(not hasattr(requested_keys, "__iter")):
         ##If a single string is passed in (i.e. not a list), make it into a list
-        requested_keys = [requested_keys]
+        requested_keys = requested_keys#[requested_keys] !_EDITED IN RUSH
+
 
     res = [dict[k] for k in requested_keys]
     return res
@@ -59,16 +60,18 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
 
     Side Effects: None
 
-    To Do: Edit to allow get_Pixelised_Model parameters to be entered as optional argument [will allow extension to general, user-defined function for model production]
+    To Do: Edit so that an x value does not need to be passed
     '''
-
-    if(xKey not in Params):
-        raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library')
 
     ##Store params value so that original is not overwritten - should this be the case?
     #iParams = Params.copy() ## DEPRECATED FOR NOW as it makes sense that we would want to overwrite this
-    
-    Params[xKey] = x
+    if xKey is not None and x is not None:
+        if(xKey not in Params):
+            raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library')
+        
+        Params[xKey] = x
+    else:
+        print 'get_Pixelised_Model_wrapFunction - x and xKey not passed'
 
     image, Params = get_Pixelised_Model(Params, **kwargs)
 
@@ -77,7 +80,88 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
     else:
         return image, Params
 
-def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
+
+def user_get_Pixelised_Model(Params, Verbose = False, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
+    '''
+    LABS: This method is inconstruction
+    '''
+
+    iParams = Params.copy()
+
+    ###Get Surface Brightness image on enlarged grid
+    enlargementFactor = 1.#int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
+    tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
+    if(Verbose):
+        print 'enlargement factor is:', enlargementFactor, tempStampSize
+        
+        
+    ##Evaluate user-defined function on a fine grid
+    ## Use only an odd number here
+    fineGridFactor = 1
+    xy = [np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[0]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor), \
+          np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[1]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor)]
+
+    print 'xy shape check', xy[0].shape, xy[1].shape, xy[0], int(0.5*fineGridFactor+1)/fineGridFactor
+          
+    ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
+    #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
+        
+    cen = iParams['centroid']
+    
+    ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
+    ## This could also be done dy readjusting according to distance from centre.
+    lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
+    cen[0] = cen[0] + lOffset
+    cen[1] = cen[1] + rOffset
+
+    print 'Centroid Comparison:', cen, iParams['centroid']
+    
+    ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
+
+    print 'Using Flux:', iParams['flux']
+
+    sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
+
+    ## Set up pixel response function
+    PixResponse = np.zeros((fineGridFactor + 2, fineGridFactor + 2))
+    PixResponse[1:-1, 1:-1] = 1./(fineGridFactor*fineGridFactor)
+
+    ## Convolve with pixel response function
+    #import scipy.signal
+    #Pixelised = scipy.signal.fftconvolve(sb, PixResponse, 'same')
+    #import scipy.signal
+    #Pixelised = scipy.signal.convolve2d(sb, PixResponse, 'full')
+    import astropy.convolution as ast
+    ast.convolve(sb, PixResponse)
+
+    
+    ##Isolate the middle value as the central pixel value
+    Res = Pixelised[::fineGridFactor, ::fineGridFactor]
+    #Res = Pixelised[fineGridFactor/2::fineGridFactor, fineGridFactor/2::fineGridFactor]
+
+    print 'Check'
+    print Pixelised[2,:]
+    print ' '
+    print Res[0,:]
+
+    import pylab as pl
+    f = pl.figure()
+    ax = f.add_subplot(211)
+    im = ax.imshow(Pixelised)
+    pl.colorbar(im)
+    ax = f.add_subplot(212)
+    im = ax.imshow(Res)
+    pl.colorbar(im)
+    print 'SB flux check:', sb.sum()
+    pl.show()
+
+
+    print 'Res shape:', Res.shape
+    
+    return Res, Params
+
+
+def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
     import time
     import math
     import os
@@ -112,6 +196,8 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = 
     ##additionalConstantFlux is used in certain cases to allow GALSIM to deal with cases where the total flux is close to zero
     #Q: If the flux normalisation is arbirarily shifted, how is the PSF and pixel response function-convolved final image affected.
     additionalConstantFlux = 0
+    if(additionalConstantFlux != 0):
+        raise ValueError('get_pixelised_model - additionalConstantFlux takes a dis-allowed value at this point of the code. I cannae let you do that captain.')
 
     ##Set up random deviate, which is used to set noise on image
     if(noiseType is not None):
@@ -133,7 +219,8 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = 
         ## NOTE: it is not recommended to turn off enlargementFactor, since the use of the interpolated image can differ to GALSIM default by a large amount depending on how the renormalisation factor is used when defining the interpolated image
         enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
         tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
-        print 'enlargement factor is:', enlargementFactor, tempStampSize
+        if(Verbose):
+            print 'enlargement factor is:', enlargementFactor, tempStampSize
 
 
         ##Evaluate user-defined function on a fine grid
@@ -155,7 +242,8 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = 
 
         sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
 
-         #Use to debug the form of the surface brightness profile
+        #Use to debug the form of the surface brightness profile
+        '''
         import pylab as pl
         f = pl.figure()
         ax = f.add_subplot(111)
@@ -163,17 +251,20 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = 
         pl.colorbar(im)
         print 'SB flux check:', sb.sum()
         pl.show()
+        '''
 
         ## Set up as a GALSIM interpolated image. To do this, one must set the flux normalisation value. How this is done is an open question: setting it to sb.sum assumes that the sb is constructed on a pixel scale, and that the full flux of the image is contained in the postage stamp, or it may mean that the flux only reflects that which is contained in the PS and thus is not rescaled to contain the full model flux. Setting it to iParams['flux'] may cause unwanted renormalisation in the image if the PS is too small to contain the entire model.
         ## Note, use of the Guassian model with no ellipticity agrees with GALSIM in both cases to sub-% *if enlargementFactor is used*. If not, then differences (GALSIM_Default - Interpolated)  can be as large as : -20 per pixel, factor of 3 in PS flux using flux =  sb.sum(), and -10:60 per pixel, factor of 1.01 in PS flux using flux = iParams['flux'] (10x10, rs = 6.)
 
         if(np.absolute(sb.sum()) < 10**(-11)):
-            additionalConstantFlux = (2.*10.**(-11))/np.prod(sb.shape)
+            additionalConstantFlux = 0.#(2.*10.**(-11))/np.prod(sb.shape)
 
             if(Verbose):
                 print 'Using additional flux due to machine precision requirements in use of GALSIM'
 
-        sb += additionalConstantFlux
+        print 'Sum of SB profile:', sb.sum()
+
+        sb += additionalConstantFlux        
         gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.), flux = sb.sum())
         sb -= additionalConstantFlux
 
@@ -214,6 +305,7 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = 
         if Verbose:
             print 'Adding noise by SNR value:', iParams['SNR']
         iParams['noise'] = image.addNoiseSNR(noise, snr = iParams['SNR'], preserve_flux = True)
+        iParams['noise'] = iParams['noise']**0.5
         if Verbose:
             print  'GALSIM Noise:', iParams['noise']
         
@@ -221,6 +313,11 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = True, outputImage = 
 
     ## additionalConstantFlux is subtracted to remove constant shhet of flux applied for certain machine-precision cases
     aimage = image.array - additionalConstantFlux
+
+    if(sbProfileFunc is not None):
+        if(Verbose):
+            print 'Model Production: sb sum check:', sb.sum(), aimage.sum()
+        #raw_input('Check')
     
     ##If debugging, plot pixelised galaxy image
     if(debug or outputImage):

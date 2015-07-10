@@ -49,20 +49,21 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     elif diffType.lower() == 'analytic' or diffType.lower() == 'ana':
         ## Get fully analytic derivative
         print 'Analytic derivatives centroid placed at:', iParams['centroid'] 
-        diffIm = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams,pLab,  noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab, pLab])]
+        diffIm = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams,pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab, pLab])]
         #diffIm = modPro.get_Pixelised_Model(iParams, noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der) ##Add args to set derivatives
         #raise RuntimeError('analytic_GaussianLikelihood_Bias - I have not yet coded up a fully analytic way of obtaining derivatives of the model image')
+        
     else:
         raise RuntimeError('analytic_GaussianLikelihood_Bias - Invalid differential type (diffType) entered:'+diffType)
 
-    print 'Using Noise:', imageParams['noise']
-    
-    nPix = np.prod(diffIm[0].shape)
-    ## get prefactor : (sigma^2)/(2 n^2)
-    preFactor = (imageParams['noise']*imageParams['noise'])/(2.*nPix*nPix)
+    ## get prefactor : (sigma^2)/(2)
+    preFactor = -1.0*(imageParams['noise']*imageParams['noise'])/2.
     # get bias as prefactor*(sum I' * I'')/ (sum I' ^2)^2
-    print 'bias value check:', (diffIm[0]*diffIm[1]).sum(), diffIm[0].sum(), diffIm[1].sum(), diffIm[0].shape, diffIm[1].shape
-    bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[1],2.).sum(), 2.); bias *= preFactor
+    bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[0],2.).sum(), 2.);
+    #print 'Bias by parts:', bias, preFactor, bias*preFactor
+    #raw_input('bias Check')
+    
+    bias *= preFactor
 
     return bias
 
@@ -107,7 +108,7 @@ def return_numerical_ML_Bias(parameter_value, parameter_label, imageParams, orde
 
         ## Store imageParams in temporary storage to ensure that dictionary in not overwritten
         iParams = imageParams.copy()
-        dpixlnL = finite_difference_derivative(get_logLikelihood, pVal, args = [pLab, image, iParams, 'pix'], n = [1,2,3], dx = [0.0001, 0.0001], maxEval = 1000, eps = 1.e-4)
+        dpixlnL = finite_difference_derivative(get_logLikelihood, pVal, args = [pLab, image, iParams, 'pix'], n = [1,2,3], dx = [0.0001, 0.0001], maxEval = 1000, eps = 1.e-3)
 
         K[ev] = dpixlnL[2].sum()/nPix
         
