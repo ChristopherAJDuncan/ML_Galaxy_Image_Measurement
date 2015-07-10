@@ -1,0 +1,27 @@
+import src.model_Production as modPro
+import src.measure_Bias as mBias
+
+
+## Bias Measurement
+S0 = 0.3; derLabel = 'e1'
+imageParams = modPro.default_ModelParameter_Dictionary()
+imageParams['SNR'] = 200.
+imageParams[derLabel] = S0
+imageParams['stamp_size'] = [50,50]
+
+###Get image
+image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
+
+modelParams = imageParams
+
+print 'modelParams test:', modelParams['stamp_size']
+
+##Produce fully numerical bias
+#bias = mBias.return_numerical_ML_Bias(0.1, 'e1', modelParams)
+#print 'Bias is found to be:', bias
+
+
+##Produce analytic bias
+print 'Getting analytic bias:'
+anbias = mBias.analytic_GaussianLikelihood_Bias(0.1, 'e1', modelParams)
+print 'Analytic Bias is:', anbias
