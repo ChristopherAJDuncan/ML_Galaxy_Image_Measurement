@@ -23,7 +23,7 @@ fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.va
 
 ##Initial Galaxy Set up
 imageShape = (10., 10.)
-imageParams = dict(size = 2.0, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageShape)+1)/2, flux = 1.e5, \
+imageParams = dict(size = 0.84853, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageShape)+1)/2, flux = 4.524, \
                    magnification = 1., shear = [0., 0.], noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
                    modelType = 'gaussian')
 
@@ -89,12 +89,18 @@ def bias_bySNR_analytic():
         ##Set Model
         imageParams['SNR'] = SNR
 
-        ##Produce image to update noise to correct value (THIS IS A HACK AND NEEDS CHANGED) - estimate_Noise works fairly well
-        disc, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', outputImage = False)
+        ##Produce image to update noise to correct value (THIS IS A HACK AND NEEDS CHANGED) - estimate_Noise works fairly well, but you need to specify the noise correctly
+        #disc, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', outputImage = False)
+
+        print 'Analytic Bias Check: For SNR', SNR, ' has noise var:', imageParams['noise']
+        ## Check image to get SNR
+        imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
+        imageParams['noise'] = modPro.SNR_Mapping(imageSB, SNR = SNR)
 
         bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues[e], fitParamsLabels[e], imageParams, diffType = 'ana')])
 
-        print 'Analytic Bias for SNR:', SNR, ' is :', bias
+        print '\n Analytic Bias for SNR:', SNR, ' is :', bias
+        print ' '
 
         ### different to bias_bySNR
         np.savetxt(handle, np.hstack((SNR,bias)).reshape(1,2))

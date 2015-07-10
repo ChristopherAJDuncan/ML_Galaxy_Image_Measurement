@@ -20,22 +20,27 @@ imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
 #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
 
 ##A Halls version
-#image = np.genfromtxt('/home/cajd/Downloads/fid_image.dat')
-image = np.genfromtxt('/home/cajd/Downloads/dfid_image.dat')
-image = image.T
+image = np.genfromtxt('/home/cajd/Downloads/fid_image.dat')
+dimage = np.genfromtxt('/home/cajd/Downloads/dfid_image.dat')
+ddimage = np.genfromtxt('/home/cajd/Downloads/ddfid_image.dat')
+image = image.T; dimage = dimage.T; ddimage = ddimage.T
 print 'Got Original'
 
 print 'Halls:', np.power(image,2.).sum()
+
+print dimage[:1,:5], ';', ddimage[:1,:5], ';', (dimage*ddimage)[:1,:5], (dimage*ddimage)[:1,:5].sum()
+
+imageParams['noise'] = np.sqrt(0.001705)
+print (-1.0*(imageParams['noise']*imageParams['noise'])/2.), (dimage*ddimage).sum(), np.power(dimage,2.).sum()
+print 'Halls Bias:', (-1.0*(imageParams['noise']*imageParams['noise'])/2.)*( (dimage*ddimage).sum() )/np.power( np.power(dimage,2.).sum(), 2.)
+raw_input('Check')
 
 ###Get image using user-specified surface brightness model
 #imageSB, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
 #imageSB, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
 
-#imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1', 'e1'])
-
-from src.derivatives import finite_difference_derivative
-imageSB = finite_difference_derivative(modPro.get_Pixelised_Model_wrapFunction, 0.3, args = [imageParams, 'e1', 1], n = [1], dx = [0.001, 0.001], order = 5, eps = 1.e-3, convergenceType = 'sum', maxEval = 100)
+imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1', 'e1'])
 
 print 'Mine:', np.power(imageSB,2.).sum()
 

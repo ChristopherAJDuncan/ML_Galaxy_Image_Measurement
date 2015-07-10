@@ -48,7 +48,6 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
         diffIm = finite_difference_derivative(modPro.get_Pixelised_Model_wrapFunction, pVal, args = [iParams, pLab, 1], n = [1,2], dx = [0.001, 0.001], order = 5, eps = 1.e-3, convergenceType = 'sum', maxEval = 100)
     elif diffType.lower() == 'analytic' or diffType.lower() == 'ana':
         ## Get fully analytic derivative
-        print 'Analytic derivatives centroid placed at:', iParams['centroid'] 
         diffIm = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams,pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab, pLab])]
         #diffIm = modPro.get_Pixelised_Model(iParams, noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der) ##Add args to set derivatives
         #raise RuntimeError('analytic_GaussianLikelihood_Bias - I have not yet coded up a fully analytic way of obtaining derivatives of the model image')

@@ -73,7 +73,7 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
     else:
         print 'get_Pixelised_Model_wrapFunction - x and xKey not passed'
 
-    image, Params = get_Pixelised_Model(Params, **kwargs)
+    image, Params = user_get_Pixelised_Model(Params, **kwargs)
 
     if returnOrder == 1:
         return image
@@ -81,9 +81,28 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
         return image, Params
 
 
-def user_get_Pixelised_Model(Params, Verbose = False, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
+def SNR_Mapping(model, var = None, SNR = None):
     '''
-    LABS: This method is inconstruction
+    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition
+    '''
+    if(var is None and SNR is not None):
+        return np.sqrt(np.power(model,2.).sum()/(SNR*SNR))
+    elif(SNR is None and var is not None):
+        return np.sqrt(np.power(model,2.).sum()/var)
+    else:
+        raise ValueError('SNR_Mapping - Either noise variance or SNR must be entered')
+
+def user_get_Pixelised_Model(Params, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
+    '''
+    Author constructed method of image construction using a pixel response function (10Jul2015)
+
+    Tests:
+    First-order analytic bias on e1 = 0.3 agrees well with A Halls version. Comparison of image and up to second order derivatives comapre to < 10% with matched A. Hall version.
+
+    Returns a pixelised image set according to Params and using sbProfileFunc.
+
+    To Do:
+    -- Add noise sampling to allow use as image production on simulations.
     '''
 
     iParams = Params.copy()
@@ -97,11 +116,9 @@ def user_get_Pixelised_Model(Params, Verbose = False, outputImage = False, sbPro
         
     ##Evaluate user-defined function on a fine grid
     ## Use only an odd number here
-    fineGridFactor = 1
+    fineGridFactor = 7
     xy = [np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[0]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor), \
           np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[1]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor)]
-
-    print 'xy shape check', xy[0].shape, xy[1].shape, xy[0], int(0.5*fineGridFactor+1)/fineGridFactor
           
     ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
     #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
@@ -110,15 +127,15 @@ def user_get_Pixelised_Model(Params, Verbose = False, outputImage = False, sbPro
     
     ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
     ## This could also be done dy readjusting according to distance from centre.
+    '''
     lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
     cen[0] = cen[0] + lOffset
     cen[1] = cen[1] + rOffset
+    '''
 
-    print 'Centroid Comparison:', cen, iParams['centroid']
-    
-    ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
-
-    print 'Using Flux:', iParams['flux']
+    ''' Note: No recovery of final subarray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
+    if(sbProfileFunc is None):
+        raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
 
     sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
 
@@ -127,18 +144,18 @@ def user_get_Pixelised_Model(Params, Verbose = False, outputImage = False, sbPro
     PixResponse[1:-1, 1:-1] = 1./(fineGridFactor*fineGridFactor)
 
     ## Convolve with pixel response function
+    import scipy.signal
+    Pixelised = scipy.signal.fftconvolve(sb, PixResponse, 'same')
     #import scipy.signal
-    #Pixelised = scipy.signal.fftconvolve(sb, PixResponse, 'same')
-    #import scipy.signal
-    #Pixelised = scipy.signal.convolve2d(sb, PixResponse, 'full')
-    import astropy.convolution as ast
-    ast.convolve(sb, PixResponse)
-
+    #Pixelised = scipy.signal.convolve2d(sb, PixResponse, 'same')
+    #import astropy.convolution as ast
+    #ast.convolve(sb, PixResponse)
     
     ##Isolate the middle value as the central pixel value
     Res = Pixelised[::fineGridFactor, ::fineGridFactor]
     #Res = Pixelised[fineGridFactor/2::fineGridFactor, fineGridFactor/2::fineGridFactor]
 
+    '''
     print 'Check'
     print Pixelised[2,:]
     print ' '
@@ -154,10 +171,8 @@ def user_get_Pixelised_Model(Params, Verbose = False, outputImage = False, sbPro
     pl.colorbar(im)
     print 'SB flux check:', sb.sum()
     pl.show()
+    '''
 
-
-    print 'Res shape:', Res.shape
-    
     return Res, Params
 
 
