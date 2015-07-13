@@ -17,7 +17,7 @@ def default_ModelParameter_Dictionary(**setters):
     '''
 
     imgshape = np.array([10, 10])
-    dct = dict(size = 3., e1 = 0., e2 = 0., centroid = (np.array(imgshape)+1)/2., flux = 1.e3, magnification = 1., shear = [0., 0.], noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 3., modelType = 'gaussian')
+    dct = dict(size = 3., e1 = 0., e2 = 0., centroid = (np.array(imgshape)+1)/2., flux = 1.e3, magnification = 1., shear = [0., 0.], noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., modelType = 'gaussian')
 
     for kw in setters.keys():
         if kw not in dct:
@@ -92,7 +92,7 @@ def SNR_Mapping(model, var = None, SNR = None):
     else:
         raise ValueError('SNR_Mapping - Either noise variance or SNR must be entered')
 
-def user_get_Pixelised_Model(Params, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
+def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
     '''
     Author constructed method of image construction using a pixel response function (10Jul2015)
 
@@ -107,73 +107,100 @@ def user_get_Pixelised_Model(Params, Verbose = False, noiseType = None, outputIm
 
     iParams = Params.copy()
 
-    ###Get Surface Brightness image on enlarged grid
-    enlargementFactor = 1.#int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
-    tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
-    if(Verbose):
-        print 'enlargement factor is:', enlargementFactor, tempStampSize
-        
-        
-    ##Evaluate user-defined function on a fine grid
-    ## Use only an odd number here
-    fineGridFactor = 7
-    xy = [np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[0]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor), \
-          np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[1]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor)]
+    if(inputImage is None):
+        ###Get Surface Brightness image on enlarged grid
+        enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
+        tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
+        if(Verbose):
+            print 'enlargement factor is:', enlargementFactor, tempStampSize
+            
+            
+        ##Evaluate user-defined function on a fine grid
+        ## Use only an odd number here
+        fineGridFactor = 5
+        xy = [np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[0]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor), \
+              np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[1]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor)]
           
-    ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
-    #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
+        ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
+        #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
         
-    cen = iParams['centroid']
+        cen = iParams['centroid']
+
+        print 'User defined, centroid at:', cen
+
     
-    ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
-    ## This could also be done dy readjusting according to distance from centre.
-    '''
-    lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
-    cen[0] = cen[0] + lOffset
-    cen[1] = cen[1] + rOffset
-    '''
+        ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
+        ## This could also be done dy readjusting according to distance from centre.
 
-    ''' Note: No recovery of final subarray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
-    if(sbProfileFunc is None):
-        raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
+        lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
+        cen[0] = cen[0] + lOffset
+        cen[1] = cen[1] + rOffset
 
-    sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
+        boundary = np.array(0.5*(enlargementFactor-1)*np.array(iParams['stamp_size'])).astype(int)
+        
+        ''' Note: No recovery of final subarray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
+        if(sbProfileFunc is None):
+            raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
 
-    ## Set up pixel response function
-    PixResponse = np.zeros((fineGridFactor + 2, fineGridFactor + 2))
-    PixResponse[1:-1, 1:-1] = 1./(fineGridFactor*fineGridFactor)
+        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
+        
+        ## Set up pixel response function
+        PixResponse = np.zeros((fineGridFactor + 2, fineGridFactor + 2))
+        PixResponse[1:-1, 1:-1] = 1./(fineGridFactor*fineGridFactor)
 
-    ## Convolve with pixel response function
-    import scipy.signal
-    Pixelised = scipy.signal.fftconvolve(sb, PixResponse, 'same')
-    #import scipy.signal
-    #Pixelised = scipy.signal.convolve2d(sb, PixResponse, 'same')
-    #import astropy.convolution as ast
-    #ast.convolve(sb, PixResponse)
+        ## Convolve with pixel response function
+        import scipy.signal
+        Pixelised = scipy.signal.fftconvolve(sb, PixResponse, 'same')
+        #Pixelised = scipy.signal.convolve2d(sb, PixResponse, 'same')
+        #import astropy.convolution as ast
+        #ast.convolve(sb, PixResponse)
     
-    ##Isolate the middle value as the central pixel value
-    Res = Pixelised[::fineGridFactor, ::fineGridFactor]
-    #Res = Pixelised[fineGridFactor/2::fineGridFactor, fineGridFactor/2::fineGridFactor]
+        ##Isolate the middle value as the central pixel value
+        Res = Pixelised[::fineGridFactor, ::fineGridFactor]
+        #Res = Pixelised[fineGridFactor/2::fineGridFactor, fineGridFactor/2::fineGridFactor]
 
-    '''
-    print 'Check'
-    print Pixelised[2,:]
-    print ' '
-    print Res[0,:]
+        ##Isolate part of postage stamp which corresponds to the 'unenlarged' input array
+        Res = Res[boundary[0]:boundary[0]+iParams['stamp_size'][0], \
+                  boundary[1]:boundary[1]+iParams['stamp_size'][1]]
+        ## Q: Could this be done earlier/quicker?
 
-    import pylab as pl
-    f = pl.figure()
-    ax = f.add_subplot(211)
-    im = ax.imshow(Pixelised)
-    pl.colorbar(im)
-    ax = f.add_subplot(212)
-    im = ax.imshow(Res)
-    pl.colorbar(im)
-    print 'SB flux check:', sb.sum()
-    pl.show()
-    '''
+        '''
+        print 'Check'
+        print Pixelised[2,:]
+        print ' '
+        print Res[0,:]
+        
+        import pylab as pl
+        f = pl.figure()
+        ax = f.add_subplot(211)
+        im = ax.imshow(Pixelised)
+        pl.colorbar(im)
+        ax = f.add_subplot(212)
+        im = ax.imshow(Res)
+        pl.colorbar(im)
+        print 'SB flux check:', sb.sum()
+        pl.show()
+        '''
+    else:
+        Res = np.array(inputImage).copy()
 
-    return Res, Params
+    ### Add noise ####
+    if(noiseType is not None):
+
+        if(noiseType.lower() == 'g'):
+            ##Apply Gaussian radnom noise to each pixel using a Guassian model
+            ## Get Noise Variance by SNR
+            iParams['noise'] = SNR_Mapping(Res, SNR = iParams['SNR']) ##This preserves flux
+            
+            print 'User defined noise variance taken to be:', iParams['noise']
+            
+            ## Apply Noise Variance
+            noise = iParams['noise']*np.random.randn(Res.shape[0], Res.shape[1]) #+ mu = 0.
+            Res += noise
+        else:
+            raise ValueError('user_get_Pixelised_Model - noiseType not recognised:', str(noiseType))        
+
+    return Res, iParams
 
 
 def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
@@ -200,7 +227,10 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     -- The use of ``enlargementFactor'' allows the analytic, user-specified SB profile to be evaluated on effectively a larger grid, so that the flux assigned is indeed the total flux, and not the total flux within the postage stamp. The residual to the GALSIM default Gaussian class is verified to <~1% for the circular case, but not for any case with ellipticty (15th June 2015 cajd)
 
     ISSUES:
-    -- Where the sbProfileFunc does not correspond to a traditional surface brightness profile (e.g. when considering derivatives), then there may the the unusual case where the flux defined as the sum over the surface brightness grid is within machin precision of zero. In this case, when trying to define a GALSIM interpolated image object, the assertion "abs(flux - flux_tot) < abs(flux_tot)" will fail and GALSIM will crash. This is hacked in the following code by adding a constant flux sheet to the SB profile and subtracting this off. HOWEVER, it is known that this gives large differences in the returned pixelised SB profile when the additionalConstantFlux is large. For the case considered here, it is set to be small, and only small (sub%) deviations have been observed in the tests I have applied.
+    -- Where the sbProfileFunc does not correspond to a traditional surface brightness profile (e.g. when considering derivatives), then there may the the unusual case where the flux defined as the sum over the surface brightness grid is within machin precision of zero. In this case, when trying to define a GALSIM interpolated image object, the assertion "abs(flux - flux_tot) < abs(flux_tot)" will fail and GALSIM will crash. This can be hacked in the following code by adding a constant flux sheet to the SB profile and subtracting this off, however if GALSIM is compiled without assertions then the error will not occur, but nonsense results may be output. This was one of the reasons why an authored `user-defined` pixelised model was written and applied.
+
+    **WARNING**
+    It is known that the GALSIM routine defined here produces a Gaussian SB profile which is different than the user-defined models otherwise used. Also, where the SB prfile function is passed in, large differences may also be observed where GALSIM is allowed to draw and pixelate, compared to user (cajd) defined pixelation routines. Care must therefore be taken when comparing these routines.
     
     '''
     import galsim
@@ -245,13 +275,15 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
         ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
         #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
         
-        cen = iParams['centroid']
+        cen = iParams['centroid'].copy()
 
+        print 'Centroid check, before:',iParams['centroid']
         ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
         ## This could also be done dy readjusting according to distance from centre.
         lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
         cen[0] = cen[0] + lOffset
         cen[1] = cen[1] + rOffset
+
 
         ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
 
@@ -262,7 +294,7 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
         import pylab as pl
         f = pl.figure()
         ax = f.add_subplot(111)
-        im = ax.imshow(sb)
+        im = ax.imshow(sb, interpolation = 'nearest')
         pl.colorbar(im)
         print 'SB flux check:', sb.sum()
         pl.show()
@@ -279,9 +311,9 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
 
         print 'Sum of SB profile:', sb.sum()
 
-        sb += additionalConstantFlux        
-        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.), flux = sb.sum())
-        sb -= additionalConstantFlux
+        #sb += additionalConstantFlux        
+        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.0), flux = sb.sum())
+        #sb -= additionalConstantFlux
 
     elif(iParams['modelType'].lower() == 'gaussian'):
         
@@ -299,6 +331,7 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
         
     ##Create pixel response function as tophat of a given entered (known) scale.
     pix = galsim.Pixel(iParams['pixel_scale'])
+    print 'Pixel Scale used:', iParams['pixel_scale']
 
     final = galsim.Convolve([gal, pix])
 
@@ -326,8 +359,8 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
         
         #image.addNoise(noise) #also image.addNoiseSNR(noise, snr = )...
 
-    ## additionalConstantFlux is subtracted to remove constant shhet of flux applied for certain machine-precision cases
-    aimage = image.array - additionalConstantFlux
+    ## additionalConstantFlux is subtracted to remove constant sheet of flux applied for certain machine-precision cases
+    aimage = image.array# - additionalConstantFlux
 
     if(sbProfileFunc is not None):
         if(Verbose):
@@ -398,6 +431,8 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
     NOTE: If the Postage Stamp is too small (set by xy), then some of the profile will fall outside the PS and in this case integrate(gaussian_SBProfile) != flux.
     
     '''
+
+    print 'Guassian SB profile constructed around:', cen, sigma, e1, e2
 
     #delR = np.absolute([xy[0]-cen[0], xy[1]-cen[1]]) #[delX, delY]
     delR = [xy[0]-cen[0], xy[1]-cen[1]] #[delX, delY]

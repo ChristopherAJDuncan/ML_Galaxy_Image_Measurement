@@ -7,14 +7,14 @@ import src.image_measurement_ML as ML
 import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 
-Output = './ML_Output/SNRBias/9Jul2015/e1/50x50/HighSNR/'
+Output = './ML_Output/SNRBias/9Jul2015/e1/10x10/HighSNR/'
 filePrefix = 'e0p3'
-produce = [0,1] #Sims, Analytic
+produce = [1,1] #Sims, Analytic
 
 ### Set-up
 
 
-SNRRange = [35., 50., 5.] #Min, Max, Interval
+SNRRange = [30., 51., 5.] #Min, Max, Interval
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
 fittedParameters = dict(e1 = 0.3)
@@ -22,8 +22,8 @@ fittedParameters = dict(e1 = 0.3)
 fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.values()
 
 ##Initial Galaxy Set up
-imageShape = (10., 10.)
-imageParams = dict(size = 0.84853, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageShape)+1)/2, flux = 4.524, \
+imageShape = (15., 15.) #size = 0.84853
+imageParams = dict(size = 1.2, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageShape)+1)/2, flux = 4.524, \
                    magnification = 1., shear = [0., 0.], noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
                    modelType = 'gaussian')
 
@@ -67,7 +67,7 @@ def bias_bySNR_analytic():
     global imageParams
     imageParams.update(fittedParameters)
 
-    handle = intialise_Output(Output+filePrefix+'_Bias.dat', mode = 'a')
+    handle = intialise_Output(Output+filePrefix+'_AnaBias.dat', mode = 'a')
     handle.write('## Recovered statistics as a result of bias run, single fit at a time, done analytically. Output of form [Bias] repeated for all fit quantities \n')
     for k in fittedParameters.keys():
         handle.write('#'+str(k)+' = '+str(fittedParameters[k])+'\n')
@@ -116,10 +116,13 @@ def bias_bySNR():
     '''
     print 'Producing Bias by SNR ratio'
 
-    nRealisation = 500000
+    nRealisation = 300000
 
     global imageParams
     imageParams.update(fittedParameters)
+
+    ##Get NoiseFree Image
+    noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
 
     S = -1 #Counter
     filenames = []
@@ -149,9 +152,9 @@ def bias_bySNR():
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile)
             #modPro.get_Pixelised_Model_wrapFunction(0., imageParams, noiseType = 'G', outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
-            image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile)
+            image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile, inputImage = noiseFreeImage)
             
-            ML.find_ML_Estimator(image, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, e1 = 0.5) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+            ML.find_ML_Estimator(image, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
         handle.close()
 

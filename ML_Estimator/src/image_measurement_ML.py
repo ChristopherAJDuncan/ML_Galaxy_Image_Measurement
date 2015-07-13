@@ -41,6 +41,8 @@ def estimate_Noise(image, maskCentroid = None):
 
     In reality, the noise should be estimated after subtraction of the source, which may also be done by masking out the source centre and taking the std on the background only (assuming constant sky backgroun)
 
+    *** Noise is known to be too large when the postage stamps size is not large enough, so that the model makes up a significant percentage of the image. One may therefore expect the noise to be too large for small PS sizes. ***
+
     Agrees well with GALSIM noise var on all SNR provided masCentroid is accurately placed on source centre (tested for ellipticity = 0.)
 
     Requires:
@@ -156,10 +158,6 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     ## Define dictionary ``Params'', which stores values which are being varied when evaluating the likelihood
     modelParams = initialParams
 
-    if(debug):
-        print 'DEBUG: Testing intial parameter state: GALSIM call'
-        model, modelParams = modPro.get_Pixelised_Model(modelParams)
-
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
@@ -172,6 +170,38 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     ##Output Result
     np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
+
+    if(debug):
+        ##Plot and output residual
+        fittedParams = modelParams.copy()
+        for i in range(len(fitParams)):
+            fittedParams[fitParams[i]] =  maxima[i]
+ 
+        model, disc =  modPro.user_get_Pixelised_Model(fittedParams, sbProfileFunc = modPro.gaussian_SBProfile)
+        residual = image-model
+
+        import pylab as pl
+        ##Plot image and model
+        f = pl.figure()
+        ax = f.add_subplot(211)
+        ax.set_title('Model')
+        im = ax.imshow(model, interpolation = 'nearest')
+        pl.colorbar(im)
+        ax = f.add_subplot(212)
+        ax.set_title('Image')
+        im = ax.imshow(image, interpolation = 'nearest')
+        pl.colorbar(im)
+
+        pl.show()
+
+        ##Plto Residual
+        f = pl.figure()
+        ax = f.add_subplot(111)
+        im = ax.imshow(residual, interpolation = 'nearest')
+        pl.colorbar(im)
+        pl.show()
+
+        
 
     ##Return minimised parameters
     return maxima
@@ -204,8 +234,9 @@ def get_logLikelihood(parameters, pLabels, image, setParams, returnType = 'sum')
 
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = setParams.copy()
-    #Set model parameter to reflect image size
-    modelParams['stamp_size'] = np.array(image.shape); modelParams['centroid'] = modelParams['stamp_size']/2.
+
+    if(setParams['stamp_size'] != image.shape):
+        raise RuntimeError('get_logLikelihood - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
 
     ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
     if(~(hasattr(parameters, "__iter__") or hasattr(pLabels, "__iter__"))):
@@ -224,14 +255,15 @@ def get_logLikelihood(parameters, pLabels, image, setParams, returnType = 'sum')
         else:
             modelParams[pLabels[l]] = parameters[l]
 
-    #Test reasonable model values
+    #Test reasonable model values - Effectively applying a hard prior
     if(math.sqrt(modelParams['e1']**2. + modelParams['e2']**2.) >= 0.99):
+        ##Set log-probability to be as small as possible
         return sys.float_info.max/10 #factor of 10 to avoid any chance of memory issues here
         #raise ValueError('get_logLikelihood - Invalid Ellipticty values set')
     if(modelParams['size'] <= 0.):
         return sys.float_info.max/10
 
-    model, disc = modPro.get_Pixelised_Model(modelParams)
+    model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
 
     if(model.shape != image.shape):
         raise ValueError('get_logLikelihood - model returned is not of the same shape as the input image.')
