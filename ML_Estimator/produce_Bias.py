@@ -7,18 +7,18 @@ import src.image_measurement_ML as ML
 import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 
-Output = './ML_Output/SNRBias/9Jul2015/e1/10x10/HighSNR/'
-filePrefix = 'e0p3'
+Output = './ML_Output/SNRBias/9Jul2015/T/15x15/Lookup/'
+filePrefix = 'T1p2'
 produce = [1,1] #Sims, Analytic
 
 ### Set-up
 
 
-SNRRange = [30., 51., 5.] #Min, Max, Interval
+SNRRange = [10., 51., 5.] #Min, Max, Interval
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
-fittedParameters = dict(e1 = 0.3)
-#fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
+#fittedParameters = dict(e1 = 0.3)
+fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
 fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.values()
 
 ##Initial Galaxy Set up
@@ -27,7 +27,10 @@ imageParams = dict(size = 1.2, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageSha
                    magnification = 1., shear = [0., 0.], noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
                    modelType = 'gaussian')
 
-
+## Model Lookup Defintions - Overridden in the number of fitted parameters is greater than one
+useLookup = True
+lookupRange = [-0.99, 0.99]
+lookupWidth = 0.001
 
 def intialise_Output(filename, mode = 'w', verbose = True):
     import os
@@ -124,8 +127,13 @@ def bias_bySNR():
     ##Get NoiseFree Image
     noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
 
+    modelLookup = None
+    if(len(fittedParameters.keys()) == 1 and useLookup):
+        modelLookup =  modPro.get_Model_Lookup(imageParams, fittedParameters.keys()[0], lookupRange, lookupWidth, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
+        print 'Created model lookup table'
+        
     S = -1 #Counter
-    filenames = []
+    filenames = []; SNRStore = []
     while True:
         S += 1
         SNR = SNRRange[0] + S*SNRRange[2]
@@ -136,6 +144,9 @@ def bias_bySNR():
 
         ##Set Model
         imageParams['SNR'] = SNR
+
+        ## Store SNR for output
+        SNRStore.append(SNR)
 
         ##Intialise output and set header
         filenames.append(Output+filePrefix+'_SNR'+str(SNR)+'.dat')
@@ -149,12 +160,21 @@ def bias_bySNR():
             ## This version uses GALSIM default
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
 
+            ## GALSIM with user-defined SB Profile
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile)
+            ## SYMPY - Very slow
             #modPro.get_Pixelised_Model_wrapFunction(0., imageParams, noiseType = 'G', outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
+            ## Entirely user-defined
             image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile, inputImage = noiseFreeImage)
-            
-            ML.find_ML_Estimator(image, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+
+            #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+
+            ##Find usign lookup table where appropriate
+            MLLook = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, size = 1.5) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+
+            #print '----- Realisation:', real, ':: Ex:', MLEx, ' Look:', MLLook, ' :: Ratio:', MLEx/MLLook
+            #raw_input('Check')
 
         handle.close()
 
@@ -176,20 +196,21 @@ def bias_bySNR():
 
         print 'Input check:', Input
 
+        SNR = SNRStore[f]
         Mean = Input.mean(axis = 0); StD = Input.std(axis = 0); MeanStD = StD/np.sqrt(Input.shape[0])
 
         if(len(fittedParameters.keys()) == 1):
-            out = np.array([Mean, StD, MeanStD])
+            out = np.array([SNR, Mean, StD, MeanStD])
             np.savetxt(handle1, out.reshape(1,out.shape[0]))
             
-            out = np.array([Mean-fittedParameters.values()[0], StD, MeanStD])
+            out = np.array([SNR, Mean-fittedParameters.values()[0], StD, MeanStD])
             np.savetxt(handle2, out.reshape(1,out.shape[0]))
 
         else:
-            out = np.array([ [Mean[l], StD[l], MeanStD[l]] for l in range(len(fittedParameters.keys())) ]).flatten()
+            out = np.array([ [SNR, Mean[l], StD[l], MeanStD[l]] for l in range(len(fittedParameters.keys())) ]).flatten()
             np.savetxt(handle1, out.reshape(1,out.shape[0]))
             
-            out = np.array([ [Mean[l]-fittedParameters.values()[l], StD[l], MeanStD[l]] for l in range(len(fittedParameters.keys())) ]).flatten()
+            out = np.array([ [SNR, Mean[l]-fittedParameters.values()[l], StD[l], MeanStD[l]] for l in range(len(fittedParameters.keys())) ]).flatten()
             np.savetxt(handle2, out.reshape(1,out.shape[0]))
 
 

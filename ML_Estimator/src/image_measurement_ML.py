@@ -77,7 +77,7 @@ def estimate_Noise(image, maskCentroid = None):
         return res[0]
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, **iParams):
+def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
     '''
@@ -130,6 +130,10 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         print fitParams
         print ' '
 
+        
+    if(len(fitParams) > 1 and modelLookup is not None and modelLookup['useLookup']):
+        raise RuntimeError('find_ML_Estimator - Model Lookup is not supported for more than single parameter fits')
+
     ##Set up initial params, which sets the intial guess or fixed value for the parameters which defines the model
     ##This line sets up the keywords that are accepted by the routine
     ## pixle_Scale and size should be in arsec/pixel and arcsec respectively. If pixel_scale = 1., then size can be interpreted as size in pixels
@@ -164,12 +168,13 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     ##Find minimum chi^2 using scipy optimize routine
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
-    maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams), disp = (verbose or debug))
+    maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
 
     print 'Result:', maxima
 
     ##Output Result
-    np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
+    if(outputHandle is not None):
+        np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
 
     if(debug):
         ##Plot and output residual
@@ -194,7 +199,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
         pl.show()
 
-        ##Plto Residual
+        ##Plot Residual
         f = pl.figure()
         ax = f.add_subplot(111)
         im = ax.imshow(residual, interpolation = 'nearest')
@@ -208,7 +213,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
 
 
-def get_logLikelihood(parameters, pLabels, image, setParams, returnType = 'sum'):
+def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None, returnType = 'sum'):
     import math, sys
     import model_Production as modPro
     '''
@@ -229,8 +234,6 @@ def get_logLikelihood(parameters, pLabels, image, setParams, returnType = 'sum')
 
     Known Issue: Splitting input parameters set into model does not work if a particular key of the dictionary corresponds to anything other than a scalar (e.g. tuple ofr array)
     '''
-
-    #print 'Considering parameters:', parameters
 
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = setParams.copy()
@@ -263,7 +266,24 @@ def get_logLikelihood(parameters, pLabels, image, setParams, returnType = 'sum')
     if(modelParams['size'] <= 0.):
         return sys.float_info.max/10
 
-    model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
+    ''' Get Model'''
+    if(modelLookup is not None and modelLookup['useLookup']):
+        model = np.array(modelLookup['Images'][modPro.return_Model_Lookup(modelLookup, parameters)])
+    else:
+        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
+
+    ''' Model, lookup comparison '''
+    '''
+    modelEx, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
+    print 'Model, lookup Comparison:', (model-modelEx).sum(), parameters
+    import pylab as pl
+    f = pl.figure()
+    ax = f.add_subplot(211)
+    im = ax.imshow(modelEx-model); ax.set_title('model - lookup'); pl.colorbar(im)
+    ax = f.add_subplot(212)
+    im = ax.imshow(modelEx/model); ax.set_title('model/lookup'); pl.colorbar(im)
+    pl.show()
+    '''
 
     if(model.shape != image.shape):
         raise ValueError('get_logLikelihood - model returned is not of the same shape as the input image.')

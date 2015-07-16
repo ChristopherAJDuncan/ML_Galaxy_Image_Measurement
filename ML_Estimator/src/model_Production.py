@@ -92,6 +92,55 @@ def SNR_Mapping(model, var = None, SNR = None):
     else:
         raise ValueError('SNR_Mapping - Either noise variance or SNR must be entered')
 
+def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
+    ''' Create a lookup table for the model creation - Useful only for the 1D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] '''
+    '''
+    Requires:
+    --- setParams - dictionary containign the default value for all other parameters
+    --- pLabel - string labelling the parameter being fit (that which the lookup grid is evaluated
+    --- pRange - the range over which the model is evaluated
+    --- dP - the step size of the evaluation
+
+
+    Note: If one cares, this and return Model lookup could be defined in a class.
+    '''
+
+    print '\n Constructing Model Lookup Table \n'
+
+    Params = setParams.copy()
+
+    pGrid = np.arange(pRange[0], pRange[1]+(0.5*dP), dP)
+
+    images = [1.]*pGrid.shape[0]
+    for pp in range(pGrid.shape[0]):
+        Params[pLabel] = pGrid[pp]
+        images[pp] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
+
+    ### Pack up into a dictionary
+    return dict(useLookup = True, Grid = pGrid, Images = images, width = dP)
+
+
+def return_Model_Lookup(lookup, P):
+    '''
+    Returns the lookup integer corresponding to parameter value P.
+
+    Defined here for 1D case only.
+
+    Requires:
+    -- lookup: Dictionary defined as in get_Model_Lookup
+    -- P <single element list/array>: parameter lookup value
+    '''
+
+    ##
+    index = int(round((P[0]-lookup['Grid'][0])/lookup['width']))
+    if(index < 0):
+        raise RuntimeError('return_Model_Lookup - Error with returning model lookup index - negative - Check entered range')
+    if(index > len(lookup['Images'])):
+        raise RuntimeError('return_Model_Lookup - Error with returning model lookup index - Larger than grid - Check entered range')
+
+    return index
+
+
 def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
     '''
     Author constructed method of image construction using a pixel response function (10Jul2015)
@@ -126,9 +175,6 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         
         cen = iParams['centroid']
 
-        print 'User defined, centroid at:', cen
-
-    
         ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
         ## This could also be done dy readjusting according to distance from centre.
 
@@ -277,7 +323,6 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
         
         cen = iParams['centroid'].copy()
 
-        print 'Centroid check, before:',iParams['centroid']
         ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
         ## This could also be done dy readjusting according to distance from centre.
         lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
@@ -331,7 +376,6 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
         
     ##Create pixel response function as tophat of a given entered (known) scale.
     pix = galsim.Pixel(iParams['pixel_scale'])
-    print 'Pixel Scale used:', iParams['pixel_scale']
 
     final = galsim.Convolve([gal, pix])
 
@@ -431,8 +475,6 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
     NOTE: If the Postage Stamp is too small (set by xy), then some of the profile will fall outside the PS and in this case integrate(gaussian_SBProfile) != flux.
     
     '''
-
-    print 'Guassian SB profile constructed around:', cen, sigma, e1, e2
 
     #delR = np.absolute([xy[0]-cen[0], xy[1]-cen[1]]) #[delX, delY]
     delR = [xy[0]-cen[0], xy[1]-cen[1]] #[delX, delY]
