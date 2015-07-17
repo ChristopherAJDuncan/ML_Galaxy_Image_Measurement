@@ -66,10 +66,26 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
     ##Store params value so that original is not overwritten - should this be the case?
     #iParams = Params.copy() ## DEPRECATED FOR NOW as it makes sense that we would want to overwrite this
     if xKey is not None and x is not None:
-        if(xKey not in Params):
-            raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library')
-        
-        Params[xKey] = x
+        ##Make iterabel if not already
+        try:
+            iter(xKey)
+        except TypeError:
+            xKey = [xKey]
+        try:
+            iter(x)
+        except TypeError:
+            x = [x]
+
+        #KeyCheck = [k not in Params for k in xKey]
+        #print 'KeyCheck Check:', KeyCheck, xKey
+        #if(sum(KeyCheck) >  0):
+        #    raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library:', Params.keys())
+        #if(xKey not in Params):
+        #    raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library')
+        for k,Key in enumerate(xKey):
+            if(Key not in Params):
+                raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',Key, ') is not contained in model parameter library:', Params.keys())
+            Params[Key] = x[k]
     else:
         print 'get_Pixelised_Model_wrapFunction - x and xKey not passed'
 
@@ -238,7 +254,7 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
             ## Get Noise Variance by SNR
             iParams['noise'] = SNR_Mapping(Res, SNR = iParams['SNR']) ##This preserves flux
             
-            print 'User defined noise variance taken to be:', iParams['noise']
+            #print 'User defined noise variance taken to be:', iParams['noise']
             
             ## Apply Noise Variance
             noise = iParams['noise']*np.random.randn(Res.shape[0], Res.shape[1]) #+ mu = 0.
@@ -425,7 +441,54 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
 
 ##---------------------------- Differentiation Methods --------------------------------------------##
 
-def differentiate_Pixelised_Model_Numerical(modelParams, dVal, dLab, n = [1], order = 3, interval = None):
+def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute = False):
+    import surface_Brightness_Profiles as SBPro
+    '''
+    Wrapper function to produce an analytic derivatve of the pixelised image, by using the fact that the model production routines can be called defining the surface brightness profile routine, and the arguments that are passed into it.
+
+    Requires:
+    -- modelParams: Disctionary containing default (fixed) values for all parameters which are not being measured
+    -- pVal: List ofparamter values, around which the derivative is taken
+    -- pLab: List of strings labelling the measured parameters for which the derivative is taken. Must be the same length as pVal
+    -- n: Order to which the derivative is taken. SCALAR IN THIS VERSION
+    -- permute: If false, single derivative is output for each order entered. If true, the result is returned in an nParamter^order list covering all permutations of the derivatives, where symmetry is enforced. In this case, the diagonal elements cover the nth derivatve with respect to that parameter. Result is on order of that the parameters are entered. E.g. for parameters a and b entered in that order:
+    --- Res = [ ddI/dada, ddI/dadb
+                ddI/dbda, ddI/dbdb ]
+    '''
+
+    if( n<1 or n>2 ):
+        raise ValueError('differentiate_Pixelised_Model_Analytic - Error - Only derivatives up to second order are supported for now')
+
+    nP = len(pVal)
+    nPix = modelParams['stamp_size']
+    if permute:
+        ##Consider all permutations of entered parameters. Use numpy array
+        if n == 1:
+            Res = np.zeros((nP, nPix[0], nPix[1]))
+            for i in range(nP):
+                der = [pLab[i]]
+                Res[i,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = der)
+        
+        elif n == 2:
+            Res = np.zeros((nP, nP, nPix[0], nPix[1]))
+            
+            for i in range(nP):
+                for j in range(i, nP):
+                    der = [pLab[i], pLab[j]]
+                    Res[i,j,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = der)
+                    Res[j,i,:,:] = Res[i,j] #Enforce symmetry
+
+    else:
+        ## Consider the derivative to given order for each parameter entered
+        Res = np.zeros((nP, nPix[0], nPix[1]))
+        for par in range(nP):
+            der = [pLab]*n
+            Res[par] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = der)
+
+    return Res
+
+
+def differentiate_Pixelised_Model_Numerical(modelParams, pVal, pLab, n = [1], order = 3, interval = 0.1, eps = 1.e-3, maxEval = 100):
     from derivatives import finite_difference_derivative
     '''
     28/5/15
@@ -440,12 +503,8 @@ def differentiate_Pixelised_Model_Numerical(modelParams, dVal, dLab, n = [1], or
 
     '''
 
-    ##Set initial finite difference interval
-    if interval is None:
-        interval = 0.1
-
     print 'n at modPro level:', n
-    result = finite_difference_derivative(get_Pixelised_Model_wrapFunction, dVal, args = [modelParams, dLab, 1], n = n, order = order, dx = interval)
+    result = finite_difference_derivative(get_Pixelised_Model_wrapFunction, pVal, args = [modelParams, pLab, 1], n = n, order = order, dx = interval, eps = eps, convergenceType = 'sum', maxEval = maxEval)
 
     '''
     result = np.zeros(len(n))

@@ -47,24 +47,85 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
         ##Get fully numeric derivative. This takes the derivative of the image as a whole: therefore note that this is likely to be more problematic in ensuring that derivative has converged.
         diffIm = finite_difference_derivative(modPro.get_Pixelised_Model_wrapFunction, pVal, args = [iParams, pLab, 1], n = [1,2], dx = [0.001, 0.001], order = 5, eps = 1.e-3, convergenceType = 'sum', maxEval = 100)
     elif diffType.lower() == 'analytic' or diffType.lower() == 'ana':
+        diffIm = [modPro.differentiate_Pixelised_Model_Analytic(iParams, pVal, pLab, 1, permute = True), modPro.differentiate_Pixelised_Model_Analytic(iParams, pVal, pLab, 2, permute = True)]
+
+        #This version verified to work for singel parameter case. Alternate version using function call implemented above: if found to agree, then remove this version
         ## Get fully analytic derivative
-        diffIm = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams,pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab, pLab])]
-        #diffIm = modPro.get_Pixelised_Model(iParams, noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der) ##Add args to set derivatives
-        #raise RuntimeError('analytic_GaussianLikelihood_Bias - I have not yet coded up a fully analytic way of obtaining derivatives of the model image')
-        
+        #diffIm2 = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab[0]]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab[0], pLab[0]])]
     else:
         raise RuntimeError('analytic_GaussianLikelihood_Bias - Invalid differential type (diffType) entered:'+diffType)
 
-    ## get prefactor : (sigma^2)/(2)
-    preFactor = -1.0*(imageParams['noise']*imageParams['noise'])/2.
-    # get bias as prefactor*(sum I' * I'')/ (sum I' ^2)^2
-    bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[0],2.).sum(), 2.);
-    #print 'Bias by parts:', bias, preFactor, bias*preFactor
-    #raw_input('bias Check')
-    
-    bias *= preFactor
+    nPar = len(pVal)
 
+    if(nPar == 1):
+        #### ----------------------- Single Parameter Fit Case ---------------------------------------###
+        ## This is verified to work with the old definition of the derivative function call. New definition may need extra [0]s added to end of all diffIms
+        ## get prefactor : (sigma^2)/(2)
+        preFactor = -1.0*(imageParams['noise']*imageParams['noise'])/2.
+        # get bias as prefactor*(sum I' * I'')/ (sum I' ^2)^2
+        ##Original: bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[0],2.).sum(), 2.);
+        bias = ( (diffIm[0][0,:,:]*diffIm[1][0,:,:]).sum() )/np.power( np.power(diffIm[0][0,:,:],2.).sum(), 2.);
+    
+        bias *= preFactor
+        #### -----------------------------------------------------------------------------------------###
+    
+    else:
+        ### ---------------------- Multi-Parameter Fit ---------------------------------------------- ###
+        #Verifed to work in single parameter case (17th Jul 2015)
+        nPix = np.prod(diffIm[0][0].shape)
+        
+        I, K, J = bias_components(diffIm, imageParams['noise'])
+        
+        Iin = np.linalg.inv(I)
+
+        KJ = 0.5*K+J
+        IKJ = [(Iin*KJ[i]).sum() for i in range(KJ.shape[0])] ##Constitutes a single loop: IJK should have dimension [nPar]
+        bias = [(Iin[s,:]*IKJ).sum() for s in range(nPar)] ## Single loop
+        
+        bias /= nPix
+        
     return bias
+
+
+def bias_components(parameter_derivatives, noise):
+    '''
+    Returns the components needed to calculate the parameter bias (normally I, J, K in our notation)
+    Uses the fact that the likelihood is Gaussian, and therefore noise properties of the image are known, and multiple realisations are not needed to calculate a mean.
+
+    Requires:
+    -- parameter_derivatives: 2-element list, where [0] contains a list of the first derivatives of the pixelised image across all parameters, and [1] contains the array of all permutations of second order derivatives of the pixelised image over all input parameters.
+    -- noise: **Standard Deviation** of the noise on each pixel, assumed Gaussian around zero
+    
+    '''
+
+    nPar = len(parameter_derivatives[0])
+    print 'nParameter Check:', nPar
+
+    ##Copy input parameter derivatives list for ease of notation
+    pDer = list(parameter_derivatives)
+
+    s2 = noise*noise
+
+    I = np.zeros((nPar, nPar))
+    K = np.zeros((nPar, nPar, nPar))
+    J = np.zeros(K.shape)
+
+    nPix = np.prod(pDer[0][0].shape)
+
+    ##Could this be made quicker: symmetry?, loop removal?
+    for i in range(nPar):
+        for j in range(nPar):
+            I[i,j] = (pDer[0][i]*pDer[0][j]).sum()
+            for k in range(nPar):
+                K[i,j,k] = (pDer[0][k]*pDer[1][i,j] + pDer[0][j]*pDer[1][i,k] + pDer[0][i]*pDer[1][j,k]).sum()
+                J[i,j,k] = (pDer[0][j]*pDer[1][i,k]).sum()
+
+    ###Add prefactors
+    I /= (nPix*s2)
+    K /= (-1.*nPix*s2)
+    J /= (nPix*s2)
+
+    return I, K, J
 
 def return_numerical_ML_Bias(parameter_value, parameter_label, imageParams, order = 1, maxEval = 1000):
     import model_Production as modPro

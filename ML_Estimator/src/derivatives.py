@@ -6,7 +6,6 @@ This is essentially a (fairly poor) extension to the scipy default, which only w
 Author: cajd
 '''
 
-
 def finite_difference_derivative(fun, x0, args, n = [1], order = 5, dx = 1., maxEval = 100, eps = 1.e-4, convergenceType = 'sum'):
     '''
     Compute numerical derivatives using finite differences.

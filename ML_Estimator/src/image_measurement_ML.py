@@ -170,8 +170,6 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
     maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
 
-    print 'Result:', maxima
-
     ##Output Result
     if(outputHandle is not None):
         np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))

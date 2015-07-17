@@ -7,8 +7,8 @@ import src.image_measurement_ML as ML
 import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 
-Output = './ML_Output/SNRBias/9Jul2015/T/15x15/Lookup/'
-filePrefix = 'T1p2'
+Output = './ML_Output/SNRBias/9Jul2015/e1_e2/15x15/'
+filePrefix = 'e0p3'
 produce = [1,1] #Sims, Analytic
 
 ### Set-up
@@ -17,8 +17,8 @@ produce = [1,1] #Sims, Analytic
 SNRRange = [10., 51., 5.] #Min, Max, Interval
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
-#fittedParameters = dict(e1 = 0.3)
-fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
+fittedParameters = dict(e1 = 0.3, e2 = 0.2)
+#fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
 fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.values()
 
 ##Initial Galaxy Set up
@@ -28,7 +28,7 @@ imageParams = dict(size = 1.2, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageSha
                    modelType = 'gaussian')
 
 ## Model Lookup Defintions - Overridden in the number of fitted parameters is greater than one
-useLookup = True
+useLookup = False
 lookupRange = [-0.99, 0.99]
 lookupWidth = 0.001
 
@@ -100,13 +100,14 @@ def bias_bySNR_analytic():
         imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
         imageParams['noise'] = modPro.SNR_Mapping(imageSB, SNR = SNR)
 
-        bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues[e], fitParamsLabels[e], imageParams, diffType = 'ana')])
+        bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues, fitParamsLabels, imageParams, diffType = 'ana')])
+        #bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues[e], fitParamsLabels[e], imageParams, diffType = 'ana')])
 
         print '\n Analytic Bias for SNR:', SNR, ' is :', bias
         print ' '
 
         ### different to bias_bySNR
-        np.savetxt(handle, np.hstack((SNR,bias)).reshape(1,2))
+        np.savetxt(handle, np.hstack((np.array(SNR).reshape(1,1),bias)).reshape(1,3))
 
     handle.close()
 
@@ -119,7 +120,8 @@ def bias_bySNR():
     '''
     print 'Producing Bias by SNR ratio'
 
-    nRealisation = 300000
+    nRealisation = 300000 ##This labels the maximum number of iterations
+    percentError = 10
 
     global imageParams
     imageParams.update(fittedParameters)
@@ -156,6 +158,7 @@ def bias_bySNR():
         for k in imageParams.keys():
             handle.write('#'+str(k)+' = '+str(imageParams[k])+'\n')
 
+        MaxL = np.zeros((nRealisation, len(fittedParameters.keys())))
         for real in range(nRealisation):
             ## This version uses GALSIM default
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
@@ -171,7 +174,12 @@ def bias_bySNR():
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             ##Find usign lookup table where appropriate
-            MLLook = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, size = 1.5) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+            MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, e1 = 0.35, e2 = 0.15) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+
+            if(real > 10000 and real%1000 == 0 and percentError > 0.):
+                Mean = MaxL.mean(axis = 0); Err = MaxL.std(axis = 0)/np.sqrt(MaxL.shape[0])
+                if((100.*(Err/Mean) < percentError).sum() == ML.shape[1]):
+                    break
 
             #print '----- Realisation:', real, ':: Ex:', MLEx, ' Look:', MLLook, ' :: Ratio:', MLEx/MLLook
             #raw_input('Check')
