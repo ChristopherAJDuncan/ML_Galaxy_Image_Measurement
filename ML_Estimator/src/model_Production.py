@@ -5,7 +5,7 @@ Author: cajd
 Touch Date: 28 May 2015
 '''
 import numpy as np
-import galsim
+from copy import deepcopy
 
 debug = False
 
@@ -108,8 +108,10 @@ def SNR_Mapping(model, var = None, SNR = None):
     else:
         raise ValueError('SNR_Mapping - Either noise variance or SNR must be entered')
 
+### ---------------------------------------------------------------- Model Production - Lookup Table --------------------------------------------------------------------------------------------------------- ###
+
 def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
-    ''' Create a lookup table for the model creation - Useful only for the 1D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] '''
+    ''' Create a lookup table for the model creation - Useful only for the 1D or 2D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] '''
     '''
     Requires:
     --- setParams - dictionary containign the default value for all other parameters
@@ -117,23 +119,52 @@ def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
     --- pRange - the range over which the model is evaluated
     --- dP - the step size of the evaluation
 
+    Edited on 20th Jul to enable its use in the 2D case.
 
     Note: If one cares, this and return Model lookup could be defined in a class.
     '''
 
     print '\n Constructing Model Lookup Table \n'
 
-    Params = setParams.copy()
+    Params = deepcopy(setParams)
 
-    pGrid = np.arange(pRange[0], pRange[1]+(0.5*dP), dP)
+    nPar = 1
+    if isinstance(pLabel, list):
+        nPar = len(pLabel)
+    if(nPar > 2):
+        raise RuntimeError('get_Model_Lookup - Maximum of 2 parameters are allowed as part of a lookup')
 
-    images = [1.]*pGrid.shape[0]
-    for pp in range(pGrid.shape[0]):
-        Params[pLabel] = pGrid[pp]
-        images[pp] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
+    ##Create lists where appropriate
+    if(isinstance(dP, list) == False):
+        idP = [dP]
+    else:
+        idP = dP
+    
+    if(len(idP) != nPar):
+        raise RuntimeError('get_Model_Lookup - dP (parameter width) is not conformal with number of parameters to vary', str(dP), ':', str(nPar))
+
+    ## Create the actual lookup table
+    if nPar == 1:
+        pGrid = np.arange(pRange[0], pRange[1]+(0.5*idP[0]), idP[0])
+
+        images = [1.]*pGrid.shape[0]
+        for pp in range(pGrid.shape[0]):
+            Params[pLabel[0]] = pGrid[pp]
+            images[pp] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
+    elif nPar == 2:
+        pGrid = []
+        for gg in range(nPar):
+            pGrid.append(np.arange(pRange[gg][0], pRange[gg][1]+(0.5*idP[gg]), idP[gg]))
+                
+        images = [[1.]*pGrid[1].shape[0] for i in range(pGrid[0].shape[0])]
+        for pp in range(pGrid[0].shape[0]):
+            for qq in range(pGrid[1].shape[0]):
+                Params[pLabel[0]] = pGrid[0][pp]; Params[pLabel[1]] = pGrid[1][qq]
+            
+                images[pp][qq] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
 
     ### Pack up into a dictionary
-    return dict(useLookup = True, Grid = pGrid, Images = images, width = dP)
+    return dict(useLookup = True, Grid = pGrid, Images = images, width = idP, nP = nPar)
 
 
 def return_Model_Lookup(lookup, P):
@@ -148,13 +179,25 @@ def return_Model_Lookup(lookup, P):
     '''
 
     ##
-    index = int(round((P[0]-lookup['Grid'][0])/lookup['width']))
-    if(index < 0):
+    if(lookup['nP'] == 1):
+        index = int(round((P[0]-lookup['Grid'][0])/lookup['width']))
+    elif lookup['nP'] == 2:
+        index = [int(round((P[0]-lookup['Grid'][0][0])/lookup['width'][0])), int(round((P[1]-lookup['Grid'][1][0])/lookup['width'][1]))]
+    else:
+        raise RuntimeError('return_Model_Lookup - Lookup can only support up to 2 parameters')
+            
+    if((np.array(index) < 0).sum() > 0):
         raise RuntimeError('return_Model_Lookup - Error with returning model lookup index - negative - Check entered range')
-    if(index > len(lookup['Images'])):
+    if((np.array(index) > len(lookup['Images'])).sum() > 0):
         raise RuntimeError('return_Model_Lookup - Error with returning model lookup index - Larger than grid - Check entered range')
 
-    return index
+    if(lookup['nP'] == 1):
+        return lookup['Images'][index], index
+    else:
+        return lookup['Images'][index[0]][index[1]], index
+    
+
+### ---------------------------------------------------------------- END Model Production - Lookup Table ----------------------------------------------------------------------------------------------------- ###
 
 
 def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
@@ -170,7 +213,12 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     -- Add noise sampling to allow use as image production on simulations.
     '''
 
-    iParams = Params.copy()
+    import copy
+    iParams = copy.deepcopy(Params)
+
+    ##Deal with unphysical/invalid parameters by retunring a default value for the model (set to zero)
+    if(iParams['e1']*iParams['e1'] + iParams['e2']*iParams['e2'] >= 1. or iParams['size'] <= 0):
+        return np.zeros(iParams['stamp_size'])
 
     if(inputImage is None):
         ###Get Surface Brightness image on enlarged grid
@@ -189,7 +237,7 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
         #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
         
-        cen = iParams['centroid']
+        cen = iParams['centroid'].copy()
 
         ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
         ## This could also be done dy readjusting according to distance from centre.
@@ -298,7 +346,7 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     import galsim
 
     ##Set up copy of Params to avoid overwriting input. As the copy is output, the original can be overwritten by self-referencing on runtime
-    iParams = Params.copy()
+    iParams = deepcopy(Params)
 
     ##additionalConstantFlux is used in certain cases to allow GALSIM to deal with cases where the total flux is close to zero
     #Q: If the flux normalisation is arbirarily shifted, how is the PSF and pixel response function-convolved final image affected.

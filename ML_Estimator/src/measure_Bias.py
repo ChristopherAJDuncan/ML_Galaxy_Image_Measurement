@@ -8,6 +8,7 @@ Purpose: This module contains the routines to obtain the bias in ML value from t
 debug = False
 
 import numpy as np
+from copy import deepcopy
 
 def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imageParams, order = 1, diffType = 'numeric'):
     import src.model_Production as modPro
@@ -39,7 +40,8 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
 
     pVal = parameter_value; pLab = parameter_label
 
-    iParams = imageParams.copy()
+    
+    iParams = deepcopy(imageParams)
 
     ##-- Get the derivatives of the pixelised, noise-free model
     #diffIm = modPro.differentiate_Pixelised_Model_Numerical(imageParams, S0, derLabel, n = [1,2,3], interval = [0.001, 0.001])
@@ -60,17 +62,22 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     if(nPar == 1):
         #### ----------------------- Single Parameter Fit Case ---------------------------------------###
         ## This is verified to work with the old definition of the derivative function call. New definition may need extra [0]s added to end of all diffIms
+        ##Original: bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[0],2.).sum(), 2.);
+        #Set up bias to return consistently for any number of input parameters
+        bias = np.zeros((1,1))
+        
         ## get prefactor : (sigma^2)/(2)
         preFactor = -1.0*(imageParams['noise']*imageParams['noise'])/2.
         # get bias as prefactor*(sum I' * I'')/ (sum I' ^2)^2
-        ##Original: bias = ( (diffIm[0]*diffIm[1]).sum() )/np.power( np.power(diffIm[0],2.).sum(), 2.);
-        bias = ( (diffIm[0][0,:,:]*diffIm[1][0,:,:]).sum() )/np.power( np.power(diffIm[0][0,:,:],2.).sum(), 2.);
+        bias[0,0] = ( (diffIm[0][0,:,:]*diffIm[1][0,:,:]).sum() )/np.power( np.power(diffIm[0][0,:,:],2.).sum(), 2.);
     
-        bias *= preFactor
+        bias[0,0] *= preFactor
         #### -----------------------------------------------------------------------------------------###
     
     else:
+        
         ### ---------------------- Multi-Parameter Fit ---------------------------------------------- ###
+        ### --- Verified to give identical results to single parameter case above for single parameter fit --- ###
         #Verifed to work in single parameter case (17th Jul 2015)
         nPix = np.prod(diffIm[0][0].shape)
         
@@ -167,7 +174,7 @@ def return_numerical_ML_Bias(parameter_value, parameter_label, imageParams, orde
         image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', Verbose = debug)
 
         ## Store imageParams in temporary storage to ensure that dictionary in not overwritten
-        iParams = imageParams.copy()
+        iParams = deepcopy(imageParams)
         dpixlnL = finite_difference_derivative(get_logLikelihood, pVal, args = [pLab, image, iParams, 'pix'], n = [1,2,3], dx = [0.0001, 0.0001], maxEval = 1000, eps = 1.e-3)
 
         K[ev] = dpixlnL[2].sum()/nPix

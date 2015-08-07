@@ -29,6 +29,7 @@ Shear |N| (g)
 import galsim
 import numpy as np
 import os
+from copy import deepcopy
 
 verbose = False
 debug = False
@@ -117,8 +118,6 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     Parameters: tuple of length equal to fitParams. Gives ML estimator for each fit parameter
     '''
 
-    print '\n'
-
     ## Exceptions based on input objects
     if(image is None or sum(image.shape) == 0):
         raise RuntimeError('find_ML_Estimator - image supplied is None or uninitialised')
@@ -131,8 +130,8 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         print ' '
 
         
-    if(len(fitParams) > 1 and modelLookup is not None and modelLookup['useLookup']):
-        raise RuntimeError('find_ML_Estimator - Model Lookup is not supported for more than single parameter fits')
+    if(len(fitParams) > 2 and modelLookup is not None and modelLookup['useLookup']):
+        raise RuntimeError('find_ML_Estimator - Model Lookup is not supported for more than double parameter fits')
 
     ##Set up initial params, which sets the intial guess or fixed value for the parameters which defines the model
     ##This line sets up the keywords that are accepted by the routine
@@ -160,7 +159,8 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         print ' '
 
     ## Define dictionary ``Params'', which stores values which are being varied when evaluating the likelihood
-    modelParams = initialParams
+    
+    modelParams = deepcopy(initialParams)
 
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
@@ -168,7 +168,9 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     ##Find minimum chi^2 using scipy optimize routine
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
-    maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    #maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+
+    maxima = opt.fmin_powell(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
 
     ##Output Result
     if(outputHandle is not None):
@@ -176,7 +178,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     if(debug):
         ##Plot and output residual
-        fittedParams = modelParams.copy()
+        fittedParams = deepcopy(modelParams)
         for i in range(len(fitParams)):
             fittedParams[fitParams[i]] =  maxima[i]
  
@@ -214,6 +216,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None, returnType = 'sum'):
     import math, sys
     import model_Production as modPro
+    import generalManipulation
     '''
     Returns the log-Likelihood for I-Im, where Im is image defined by dictionary ``modelParams'', and I is image being analysed.
     Minimisiation routine should be directed to this function
@@ -223,6 +226,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     pLabels: tuple of length `parameters`, which is used to identify the parameters being varied. These labels should satisfy the modelParameter dictionary keys using in setting up the model
     image: 2d <ndarray> of pixelised image
     setParams: dictionary of fixed model parameters which sets the model SB profile being fit.
+    modelLookup: An instance of the model lookup table, as set in model_Production module
     returnType:
     ---`sum`: Total log-likelihood, summing over all pixels
     ---`pix`: log-likelihood evaluated per pixel. Returns ndarray of the same shape as the input image
@@ -234,20 +238,15 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     '''
 
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
-    modelParams = setParams.copy()
+    modelParams = deepcopy(setParams)
 
     if(setParams['stamp_size'] != image.shape):
         raise RuntimeError('get_logLikelihood - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
 
-    ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
-    if(~(hasattr(parameters, "__iter__") or hasattr(pLabels, "__iter__"))):
-       #Both not iterable !!!!EDIT BACK
-       parameters = parameters; pLabels = pLabels
-       ##parameters = [parameters]; pLabels = [pLabels]
-    elif(~hasattr(parameters, "__iter__") or ~hasattr(pLabels, "__iter__")):
-       ##Only one not iterable: suggests that one is a form of list whilst the other is not: non-conformal array length
-       raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test)')
-    
+    parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
+    if(len(parameters) != len(pLabels)):
+        raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test): parameters:', str(parameters), ' labels:', str(pLabels))
+
 
     ##Vary parameters which are being varied as input
     for l in range(len(pLabels)):
@@ -266,7 +265,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 
     ''' Get Model'''
     if(modelLookup is not None and modelLookup['useLookup']):
-        model = np.array(modelLookup['Images'][modPro.return_Model_Lookup(modelLookup, parameters)])
+        model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
     else:
         model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
 
@@ -302,5 +301,84 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
         return pixlnL
     elif(returnType.lower() == 'all'):
         return [lnL, pixlnL]
+
+
+###---------------- Derivatives of log-Likelihood -----------------------------------------------###
+
+def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None):
+    import generalManipulation
+    ## May need returnType passed in
+
+    '''
+    Returns the derivative of the Gaussian log-Likelihood (ignoring parameter-independent prefactor) for parameters labelled by pLabels.
+    Uses analytic derivative of the pixelised model as given in differentiate_Pixelised_Model_Analytic routine of model_Production routine.
+
+    Note: `noise` as defined in set params must the noise_std, and must accurately describe the noise properties of the image. 
+
+    Requires:
+    parameters: flattened array of parameters to vary (allows for external program to set variation in these params)
+    pLabels: tuple of length `parameters`, which is used to identify the parameters being varied. These labels should satisfy the modelParameter dictionary keys using in setting up the model
+    image: 2d <ndarray> of pixelised image
+    setParams: dictionary of fixed model parameters which sets the model SB profile being fit.
+    modelLookup: An instance of the model lookup table, as set in model_Production module
+
+    Returns:
+    [dlnL/dbeta], repeated for all beta in order <1D ndarray>: derivative of -1*log_likelihood evaulated at entered model parameters
+
+
+    '''
+    
+    ##To be useful as part of a minimisation routine, the arguements passed to this function must be the same as those passed to the ln-Likelihood evalutaion also. This suggest possibly two routines: one, like the model differentiation itself should just return the various derivatives, and a wrapper routine which produces only the relevent derivatives required for mimimisation
+    ## Third order is ignored for now, as this wold require an edit to the methdo of calculating model derivatives, and it is unlikely that a third order derivative would ever really be necessary (excpet in the case where an analytic derivative of the model is wanted for the calculation of the bias, where simulations over many images are used: usually, the known statistics of the Gaussian lileihood can be used to remove this necessity anyway).
+
+
+    ### First derivative only are needed, so for now this will be coded only to deal with first derivatives.
+    ### Therefore, n = 1, permute = false by default
+    ### Note, that this code is unlikely to speed up any computation provided that the derivative is calculated using SymPY. Therefore this must be addressed.
+
+    ### Set up model parameters as input
+    ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
+    modelParams = deepcopy(setParams)
+
+    if(setParams['stamp_size'] != image.shape):
+        raise RuntimeError('differentiate_logLikelihood_Gaussian_Analytic - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
+
+    ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
+    parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
+    if(len(parameters) != len(pLabels)):
+        raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test)')
+
+    ##Vary parameters which are being varied as input
+    for l in range(len(pLabels)):
+        if(pLabels[l] not in modelParams):
+            raw_input('Error setting model parameters in get_logLikelihood: Parameter not recognised. <Enter> to continue')
+        else:
+            modelParams[pLabels[l]] = parameters[l]
+
+    ''' Get Model'''
+    if(modelLookup is not None and modelLookup['useLookup']):
+        model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
+    else:
+        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
+
+
+    ''' Get model derivatives '''
+    modDer = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 1, permute = False)
+    #modDer stores only the n'th derivative of all parameters entered, stored as an nP*nPix*nPix array.
+
+    ##Construct the result to be returned. This is a scalar array, with length equal to nP, and where each element corresponds to the gradient in that parameter direction
+    nP = len(parameters)
+    delI = image - model
+
+    res = np.zeros(nP)
+
+    ##Create tdI, which stores dI in the same shape as modDer
+    tdelI = np.zeros(modDer.shape); tdelI[:] = delI.copy()
+    ##Alternatively: tdelI = np.repeat(delI.reshape((1,)+delI.shape), modDer.shape[0], axis = 0)
+
+    ##Set derivative as sum_pix(delI*derI)/sig^2 for all parameters entered
+    res = (tdI*modDer).sum(axis = -1).sum(axis = -1)
+    res /= -1.*modelParams['noise']*modelParams['noise']
+    ## Note: -ve required as code essentially minimises chi^2
 
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- Bias Correction ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##

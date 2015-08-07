@@ -12,23 +12,29 @@ imageParams['e1'] = 0.6
 imageParams['e2'] = 0.2
 imageParams['size'] = 8.0
 imageParams['flux'] = 4.524
-imageParams['stamp_size'] = [10,10]
+imageParams['stamp_size'] = [30,30]
 imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
 
 
 ###Get image using GALSIM default models
-image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
+#image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
 #image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
+
+
+##Surface Brightness profile routine
+image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = ['e1', 'e1'])
+
+imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1','e1'])
+
 ### User-defined model with Guassian noise
 #image = np.genfromtxt('./TestPrograms/Hall_Models/fid_image.dat')
 #image = image.T
 
-imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
 
 
-print 'image Noise Estimated as:', imMeas.estimate_Noise(image, maskCentroid = imageParams['centroid'])
+#print 'image Noise Estimated as:', imMeas.estimate_Noise(image, maskCentroid = imageParams['centroid'])
 
-print 'imageSB Noise Estimated as:', imMeas.estimate_Noise(imageSB, maskCentroid = imageParams['centroid'])
+#print 'imageSB Noise Estimated as:', imMeas.estimate_Noise(imageSB, maskCentroid = imageParams['centroid'])
 
 ##A Halls version
 
@@ -45,7 +51,7 @@ print 'imageSB Noise Estimated as:', imMeas.estimate_Noise(imageSB, maskCentroid
 
 #imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1', 'e1'])
 
-print 'Ratio of Sum of Image:', image.sum(), imageSB.sum(), image.sum()/imageSB.sum(), imageParams['flux']
+print 'Final Check:: sumImage, sumImageSB, ratioSum(image/SB), flux:', image.sum(), imageSB.sum(), image.sum()/imageSB.sum(), imageParams['flux']
 
 import pylab as pl
 f = pl.figure()

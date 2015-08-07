@@ -7,17 +7,18 @@ import src.image_measurement_ML as ML
 import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 
-Output = './ML_Output/SNRBias/9Jul2015/e1_e2/15x15/'
-filePrefix = 'e0p3'
-produce = [1,1] #Sims, Analytic
+Output = './ML_Output/SNRBias/9Jul2015/e1_e2/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
+filePrefix = 'e10p3_e20p2'
+produce = [1,1] #Analytic, Sims
 
 ### Set-up
 
 
-SNRRange = [10., 51., 5.] #Min, Max, Interval
+SNRRange = [15., 16., 5.] #Min, Max, Interval
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
 fittedParameters = dict(e1 = 0.3, e2 = 0.2)
+#fittedParameters = dict(e2 = 0.2)
 #fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
 fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.values()
 
@@ -28,9 +29,15 @@ imageParams = dict(size = 1.2, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageSha
                    modelType = 'gaussian')
 
 ## Model Lookup Defintions - Overridden in the number of fitted parameters is greater than one
-useLookup = False
+useLookup = True
+'''## 1D Ellipticity lookup
 lookupRange = [-0.99, 0.99]
-lookupWidth = 0.001
+lookupWidth = [0.01]
+'''
+##2D Ellipticity Lookup
+lookupRange = [[-0.99, 0.99],[-0.99, 0.99]]
+lookupWidth = [0.01,0.01]
+
 
 def intialise_Output(filename, mode = 'w', verbose = True):
     import os
@@ -72,7 +79,7 @@ def bias_bySNR_analytic():
 
     handle = intialise_Output(Output+filePrefix+'_AnaBias.dat', mode = 'a')
     handle.write('## Recovered statistics as a result of bias run, single fit at a time, done analytically. Output of form [Bias] repeated for all fit quantities \n')
-    for k in fittedParameters.keys():
+    for k in fitParamsLabels:
         handle.write('#'+str(k)+' = '+str(fittedParameters[k])+'\n')
 
     S = -1 #Counter
@@ -100,14 +107,16 @@ def bias_bySNR_analytic():
         imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
         imageParams['noise'] = modPro.SNR_Mapping(imageSB, SNR = SNR)
 
-        bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues, fitParamsLabels, imageParams, diffType = 'ana')])
+        bias = np.array(mBias.analytic_GaussianLikelihood_Bias(fitParamsValues, fitParamsLabels, imageParams, diffType = 'ana'))
         #bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues[e], fitParamsLabels[e], imageParams, diffType = 'ana')])
 
         print '\n Analytic Bias for SNR:', SNR, ' is :', bias
         print ' '
 
         ### different to bias_bySNR
-        np.savetxt(handle, np.hstack((np.array(SNR).reshape(1,1),bias)).reshape(1,3))
+        print 'bias shape check:', bias.reshape(bias.shape[0], 1).shape, np.array(SNR).reshape(1,1).shape
+        print ':', np.hstack((np.array(SNR).reshape(1,1),bias.reshape(1,bias.shape[0]))).shape
+        np.savetxt(handle, np.hstack((np.array(SNR).reshape(1,1),bias.reshape(1,bias.shape[0]))))#.reshape(1,bias.shape[1]+1))
 
     handle.close()
 
@@ -120,8 +129,8 @@ def bias_bySNR():
     '''
     print 'Producing Bias by SNR ratio'
 
-    nRealisation = 300000 ##This labels the maximum number of iterations
-    percentError = 10
+    nRealisation = 1000000 ##This labels the maximum number of iterations
+    percentError = 5
 
     global imageParams
     imageParams.update(fittedParameters)
@@ -130,10 +139,12 @@ def bias_bySNR():
     noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
 
     modelLookup = None
-    if(len(fittedParameters.keys()) == 1 and useLookup):
-        modelLookup =  modPro.get_Model_Lookup(imageParams, fittedParameters.keys()[0], lookupRange, lookupWidth, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
+    if(len(fitParamsLabels) <= 2 and useLookup):
+        modelLookup =  modPro.get_Model_Lookup(imageParams, fitParamsLabels, lookupRange, lookupWidth, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
         print 'Created model lookup table'
-        
+
+
+    print 'Simulating Bias in SNR bins:\n'
     S = -1 #Counter
     filenames = []; SNRStore = []
     while True:
@@ -158,7 +169,7 @@ def bias_bySNR():
         for k in imageParams.keys():
             handle.write('#'+str(k)+' = '+str(imageParams[k])+'\n')
 
-        MaxL = np.zeros((nRealisation, len(fittedParameters.keys())))
+        MaxL = np.zeros((nRealisation, len(fitParamsLabels)))
         for real in range(nRealisation):
             ## This version uses GALSIM default
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
@@ -174,11 +185,13 @@ def bias_bySNR():
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             ##Find usign lookup table where appropriate
-            MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fittedParameters.keys(),  outputHandle = handle, setParams = imageParams, e1 = 0.35, e2 = 0.15) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+            MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, setParams = imageParams.copy(), e1 = 0.0, e2 = 0.0) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             if(real > 10000 and real%1000 == 0 and percentError > 0.):
-                Mean = MaxL.mean(axis = 0); Err = MaxL.std(axis = 0)/np.sqrt(MaxL.shape[0])
-                if((100.*(Err/Mean) < percentError).sum() == ML.shape[1]):
+                Mean = (MaxL[:real,:].mean(axis = 0)-fitParamsValues); Err = MaxL[:real,:].std(axis = 0)/np.sqrt(real)
+                if((np.absolute(100.*(Err/Mean)) < percentError).sum() == MaxL.shape[1]):
+                    print '\n For SNR:', SNR, ' percentage error was reached in ', real, ' simulated images'
+                    print 'With mean, std, %Err:', Mean, Err, np.absolute(100.*(Err/Mean))
                     break
 
             #print '----- Realisation:', real, ':: Ex:', MLEx, ' Look:', MLLook, ' :: Ratio:', MLEx/MLLook
@@ -201,8 +214,6 @@ def bias_bySNR():
     ##Produce Mean, StD from sampling and output
     for f in range(len(filenames)):
         Input = np.genfromtxt(filenames[f])
-
-        print 'Input check:', Input
 
         SNR = SNRStore[f]
         Mean = Input.mean(axis = 0); StD = Input.std(axis = 0); MeanStD = StD/np.sqrt(Input.shape[0])
@@ -229,9 +240,10 @@ if __name__ == "__main__":
 
     # Bias by SNR run
     if(produce[0]):
-        bias_bySNR()
-    if(produce[1]):
         bias_bySNR_analytic()
+    if(produce[1]):
+        bias_bySNR()
+
 
     print 'Finished Normally'
     
