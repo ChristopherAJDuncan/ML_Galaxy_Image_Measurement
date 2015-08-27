@@ -302,11 +302,15 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 
 
     ##Vary parameters which are being varied as input
+    modPro.set_modelParameter(modelParams, pLabels, parameters)
+
+    ''' Deprecated for above
     for l in range(len(pLabels)):
         if(pLabels[l] not in modelParams):
             raw_input('Error setting model parameters in get_logLikelihood: Parameter not recognised. <Enter> to continue')
         else:
             modelParams[pLabels[l]] = parameters[l]
+    '''
 
     #Test reasonable model values - Effectively applying a hard prior
     if(math.sqrt(modelParams['e1']**2. + modelParams['e2']**2.) >= 0.99):
