@@ -10,7 +10,7 @@ debug = False
 import numpy as np
 from copy import deepcopy
 
-def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imageParams, order = 1, diffType = 'numeric'):
+def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imageParams, order = 1, diffType = 'analytic'):
     import src.model_Production as modPro
     import src.surface_Brightness_Profiles as SBPro
     from derivatives import finite_difference_derivative
@@ -34,7 +34,7 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
 
     Side Effects: None
     
-    Returns: bias to stated order.
+    Returns: bias to stated order for all parameters entered, as 1D array.
     '''
 
 

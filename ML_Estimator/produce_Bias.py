@@ -1,3 +1,4 @@
+#!/usr/bin/python 
 '''
 Program to process (create and analysis) multiple noise realisations of an image according to the ML Estiamtor script. 
 '''
@@ -7,20 +8,29 @@ import src.image_measurement_ML as ML
 import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 
-Output = './ML_Output/SNRBias/9Jul2015/e1_e2/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
-filePrefix = 'e10p3_e20p2'
+Output = './ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
+#'./ML_Output/SNRBias/9Jul2015/e1/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
+filePrefix = 'e10p3'
 produce = [1,1] #Analytic, Sims
 
 ### Set-up
 
 
-SNRRange = [15., 16., 5.] #Min, Max, Interval
+SNRRange = [150., 201., 50.] #Min, Max, Interval
+minimiseMethod = 'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
-fittedParameters = dict(e1 = 0.3, e2 = 0.2)
-#fittedParameters = dict(e2 = 0.2)
+#fittedParameters = dict(e1 = 0.3, e2 = 0.2)
+#initialGuess = dict(e1 = 0.0, e2 = 0.0)
+fittedParameters = dict(e1 = 0.3)
+initialGuess = dict(e1 = 0.25)
 #fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
+#initialGuess = dict(size = 1.0)
+
+
 fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.values()
+
+
 
 ##Initial Galaxy Set up
 imageShape = (15., 15.) #size = 0.84853
@@ -29,15 +39,16 @@ imageParams = dict(size = 1.2, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageSha
                    modelType = 'gaussian')
 
 ## Model Lookup Defintions - Overridden in the number of fitted parameters is greater than one
-useLookup = True
-'''## 1D Ellipticity lookup
+useLookup = False
+## 1D Ellipticity lookup
+
 lookupRange = [-0.99, 0.99]
-lookupWidth = [0.01]
+lookupWidth = [0.001]
 '''
 ##2D Ellipticity Lookup
 lookupRange = [[-0.99, 0.99],[-0.99, 0.99]]
 lookupWidth = [0.01,0.01]
-
+'''
 
 def intialise_Output(filename, mode = 'w', verbose = True):
     import os
@@ -129,8 +140,8 @@ def bias_bySNR():
     '''
     print 'Producing Bias by SNR ratio'
 
-    nRealisation = 1000000 ##This labels the maximum number of iterations
-    percentError = 5
+    nRealisation = 10000000 ##This labels the maximum number of iterations
+    percentError = 1
 
     global imageParams
     imageParams.update(fittedParameters)
@@ -185,7 +196,7 @@ def bias_bySNR():
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             ##Find usign lookup table where appropriate
-            MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, setParams = imageParams.copy(), e1 = 0.0, e2 = 0.0) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+            MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, setParams = imageParams.copy(), **initialGuess) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             if(real > 10000 and real%1000 == 0 and percentError > 0.):
                 Mean = (MaxL[:real,:].mean(axis = 0)-fitParamsValues); Err = MaxL[:real,:].std(axis = 0)/np.sqrt(real)

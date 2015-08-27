@@ -14,11 +14,31 @@ def default_ModelParameter_Dictionary(**setters):
     '''
     Returns the default parameters used in setting up the model image. Dictionary keyword-value pairs can be passed in to overwrite defaults
 
+    To Do:
+    Place SB Profile Parameters into a sub-dictionary, thus treated in the same way as the PSF parameters?
+    
+    PSF:
+    -- Type: Corresponds to the PSF model used in producing the image
+    ---- 0: No PSF
+    ---- `Gaussian` or 1: Gaussian
+
+    -- Parameters:: parameters which defines the PSF, according to input model
+    ---- Gaussian: Gauss_Size, Gauss_e1, Gauss_e2 as defined in SB_Profile_Gaussian
     '''
 
-    imgshape = np.array([10, 10])
-    dct = dict(size = 3., e1 = 0., e2 = 0., centroid = (np.array(imgshape)+1)/2., flux = 1.e3, magnification = 1., shear = [0., 0.], noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., modelType = 'gaussian')
+    ### PSF Declaration
+    PSFDict = dict(PSF_Type = 'gaussian', PSF_size = 2., PSF_Gauss_e1 = 0.7, PSF_Gauss_e2 = 0.0)
 
+    ## SB Declaration
+    SBDict = dict(modelType = 'gaussian', size = 3., e1 = 0., e2 = 0., flux = 1.e3, magnification = 1., shear = [0., 0.])
+
+    imgshape = np.array([10, 10])
+    dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict)
+
+    ## Use this to set SB and PSF parameters - RECURSIVE
+    ##set_modelParameter(dct, setters.keys(), setters.values())
+
+    ## Use this to set all parameters
     for kw in setters.keys():
         if kw not in dct:
             print 'find_ML_Estimator - Initial Parameter Keyword:', kw, ' not recognised'
@@ -28,24 +48,113 @@ def default_ModelParameter_Dictionary(**setters):
     return dct
 
 def unpack_Dictionary(dict, requested_keys = None):
+    from generalManipulation import makeIterableList
     '''
     Returns a list of dictionary values corresponding to the list of requested keys input. If no keys are input, the full list of values corresponding to the full dictionary keys list (in stored order) is returned
     '''
 
 
     if(requested_keys is None):
-        requested_keys = dict.keys()
+        requested_keys = dict.keys() ##Make so is iterable (i.e. sperates PSF and SB keys)
     elif(not hasattr(requested_keys, "__iter")):
+        requested_keys = makeIterableList(requested_keys)
         ##If a single string is passed in (i.e. not a list), make it into a list
-        requested_keys = requested_keys#[requested_keys] !_EDITED IN RUSH
+        #requested_keys = requested_keys#[requested_keys] !_EDITED IN RUSH
+
+    ## Set SB Keys
+    rescount = 0; res = ['F']*len(requested_keys)
+    for k in requested_keys:
+        if((np.array(dict['SB'].keys()) == k).sum() > 0): #SB Parameter
+            res[rescount] = dict['SB'][k]; rescount += 1
+        elif((np.array(dict['PSF'].keys()) == k).sum() > 0): #PSF Parameter
+            res[rescount] = dict['PSF'][k]; rescount += 1
+        #elif( (np.array(dict.keys()) == k).sum() > 0): #Other Parameter
+        #    res[rescount] = dict[k]; rescount += 1
+    return res[:rescount]
 
 
-    res = [dict[k] for k in requested_keys]
-    return res
 
+def update_Dictionary(d, u):
+    '''
+    Recurively updates a dictionary and all subdictionaries. Taken from StackExchange
+    '''
+    import collections
+    for k, v in u.iteritems():
+        if isinstance(v, collections.Mapping):
+            r = update(d.get(k, {}), v)
+            d[k] = r
+        else:
+            d[k] = u[k]
+    return d
+
+
+def seperate_Keys_byModel(der, vals = None, refParam = None):
+    from copy import deepcopy
+    '''
+    Takes as input a list which contains the labels of all the parameters considered, and seperates into two lists corresponding to SurfaceBrightness, and PSF models
+    Ignores *others* for now (not PSF or SB)
+    '''
+
+    if(refParam is None):
+        ##Use default dictionary
+        Params = default_ModelParameter_Dictionary()
+    else:
+        Params = deepcopy(refParam)
+
+    ##Get Reference PSF Keys
+    refPSF = np.array(Params['PSF'].keys())
+    ##Get Reference SB Keys
+    refSB = np.array(Params['SB'].keys())
+
+    PSFDer, SBDer = ['F']*len(der), ['F']*len(der)
+    PSFVal, SBVal = ['F']*len(der), ['F']*len(der)
+    PSFcount, SBcount = 0, 0
+    for dd in range(len(der)):
+        if( sum((refPSF == der[dd])) > 0):
+            ##der is a PSF parameter
+            PSFDer[PSFcount] = der[dd]
+            if(vals is not None):
+                PSFVal[PSFcount] = vals[dd]
+            PSFcount += 1
+        elif( sum((refSB == der[dd])) > 0):
+            SBDer[SBcount] = der[dd]
+            if(vals is not None):
+                SBVal[SBcount] = vals[dd]
+            SBcount += 1
+
+    ##Isolate those subsets of der which have been assigned
+    PSFDer = PSFDer[:PSFcount]
+    SBDer = SBDer[:SBcount]
+    PSFVal = PSFVal[:PSFcount]
+    SBVal = SBVal[:SBcount]
+    
+
+    if(vals is not None):
+        return SBDer, PSFDer, SBVal, PSFVal
+    else:
+        return SBDer, PSFDer
+
+
+def set_modelParameter(Dict, param_labels, param_values):
+    '''
+    Sets model Parameters (as defined above) by input lists
+    '''
+
+    if(len( param_labels) != len(param_values)):
+        raise RuntimeError('set_modelParameter - labels and lists not conformal')
+
+    ## Seperate out into respective parts (SB/PSF)
+    SBLab, PSFLab, SBVals, PSFVals = seperate_Keys_byModel(param_labels, param_values)
+
+    for i, s in enumerate(SBLab):
+        Dict['SB'][s] = SBVals[i]
+    for i, s in enumerate(PSFLab):
+        Dict['SB'][s] = PSFVals[i]
+        
 
 ##-------------------------Model Production-----------------------------------------##
 def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs):
+    from copy import deepcopy
     '''
     ##Wrapper function for get Pixelised model, which returns the image according to Params, where parameter with key 'xKey' is set to value 'x'
 
@@ -76,20 +185,20 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
         except TypeError:
             x = [x]
 
-        #KeyCheck = [k not in Params for k in xKey]
-        #print 'KeyCheck Check:', KeyCheck, xKey
-        #if(sum(KeyCheck) >  0):
-        #    raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library:', Params.keys())
-        #if(xKey not in Params):
-        #    raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',xKey, ') is not contained in model parameter library')
+        set_modelParameter(Params, xKey, x)
+
+        ''' Deprecated for above
         for k,Key in enumerate(xKey):
             if(Key not in Params):
                 raise ValueError('get_Pixelised_Model_wrapFunction - Key entered (',Key, ') is not contained in model parameter library:', Params.keys())
             Params[Key] = x[k]
+        '''
     else:
         print 'get_Pixelised_Model_wrapFunction - x and xKey not passed'
 
-    image, Params = user_get_Pixelised_Model(Params, **kwargs)
+#    image, Params =
+    result = user_get_Pixelised_Model(Params, **kwargs)
+    image = result[0]; Params = deepcopy(result[1])
 
     if returnOrder == 1:
         return image
@@ -149,7 +258,8 @@ def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
 
         images = [1.]*pGrid.shape[0]
         for pp in range(pGrid.shape[0]):
-            Params[pLabel[0]] = pGrid[pp]
+            set_modelParameter(Params, pLabel[0], pGrid[pp])
+            #Deprecated Params[pLabel[0]] = pGrid[pp]
             images[pp] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
     elif nPar == 2:
         pGrid = []
@@ -159,7 +269,8 @@ def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
         images = [[1.]*pGrid[1].shape[0] for i in range(pGrid[0].shape[0])]
         for pp in range(pGrid[0].shape[0]):
             for qq in range(pGrid[1].shape[0]):
-                Params[pLabel[0]] = pGrid[0][pp]; Params[pLabel[1]] = pGrid[1][qq]
+                set_modelParameter(Params, [pLabel[0], pLabel[1]], [pGrid[0][pp], pGrid[1][qq]])
+                #Deprecated Params[pLabel[0]] = pGrid[0][pp]; Params[pLabel[1]] = pGrid[1][qq]
             
                 images[pp][qq] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
 
@@ -200,7 +311,7 @@ def return_Model_Lookup(lookup, P):
 ### ---------------------------------------------------------------- END Model Production - Lookup Table ----------------------------------------------------------------------------------------------------- ###
 
 
-def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, **sbFuncArgs):
+def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, der = None, **sbFuncArgs):
     '''
     Author constructed method of image construction using a pixel response function (10Jul2015)
 
@@ -216,20 +327,31 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     import copy
     iParams = copy.deepcopy(Params)
 
+    if(der is not None):
+        SBDer, PSFDer = seperate_Keys_byModel(der, iParams)
+    else:
+        SBDer, PSFDer = [],[]
+
     ##Deal with unphysical/invalid parameters by retunring a default value for the model (set to zero)
     if(iParams['e1']*iParams['e1'] + iParams['e2']*iParams['e2'] >= 1. or iParams['size'] <= 0):
         return np.zeros(iParams['stamp_size'])
 
     if(inputImage is None):
-        ###Get Surface Brightness image on enlarged grid
-        enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
+        ###Get Surface Brightness image on enlarged grid. This is to take into account that the surface brightness profile may be non-zero outside the Postage Stamp boundaries set.
+        ## Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, and this can be turned off by setting enlargementFactor = 1.
+        if(iParams['PSF']['PSF_Type']):
+            if(iParams['PSF']['PSF_size'] <= 0.):
+                raise ValueError('user_get_Pixelised_Model - PSF Size is invalid (Zero or negative)')
+            enlargementFactor = int(5*np.amax([iParams['size'],iParams['PSF']['PSF_size']])/(np.amin(iParams['stamp_size'])*0.7)+1)
+        else:
+            enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
         tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
         if(Verbose):
             print 'enlargement factor is:', enlargementFactor, tempStampSize
             
             
-        ##Evaluate user-defined function on a fine grid
-        ## Use only an odd number here
+        ##Evaluate user-defined function on a fine grid to account for sub-Pixel variation
+        ## Use only an odd number here. Increasing fineGridFactor imporves accuracy, but limits speed
         fineGridFactor = 5
         xy = [np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[0]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor), \
               np.arange(1.-int(0.5*(fineGridFactor))/fineGridFactor, 1+tempStampSize[1]+int(0.5*fineGridFactor)/fineGridFactor, 1./fineGridFactor)]
@@ -246,15 +368,44 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         cen[0] = cen[0] + lOffset
         cen[1] = cen[1] + rOffset
 
+        ## Boundary stores the sub-section of the enlarged PS which contains the input stamp
         boundary = np.array(0.5*(enlargementFactor-1)*np.array(iParams['stamp_size'])).astype(int)
         
         ''' Note: No recovery of final subarray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
         if(sbProfileFunc is None):
             raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
 
-        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
+        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], der = SBDer, **sbFuncArgs)
+
+        ''' Get the PSF model and convolve (if appropriate) '''
+        ## Default PSF parameters: this would eventually be passed in
+        ## Future edits to this code would require the PSF model to be passed (or determined by dictionary values)
+
+        if(iParams['PSF']['PSF_Type']):
+            import PSF_Models
+
+            if(Verbose):
+                print 'Convolving with a PSF'
+            
+            psfCen = [xy[0][0] + 0.5*(xy[0][-1]-xy[0][0]), xy[1][0] + 0.5*(xy[1][-1]-xy[1][0])]
+            if(iParams['PSF']['PSF_Type'] == 1 or str(iParams['PSF']['PSF_Type']).lower() == 'gaussian'):
+                ## Use definition of elliptical SB profile, with total_flux == 1. so that integral(PSF) = 1
+                #psf = gaussian_SBProfile(xy, psfCen,  iParams['PSF_Parameters'][0],  iParams['PSF_Parameters'][1],  iParams['PSF_Parameters'][2], 1.0)
+                from PSF_Models import PSFModel_Weave
+                psf = PSFModel_Weave(xy, psfCen, iParams['PSF'], der = PSFDer)
+            else:
+                raise ValueError('user_get_Pixelised_Model - PSF_Type entered not known:'+str(iParams['PSF_Type']))
+
+            ##Convolve the PSF and SBProfile
+            ### Note: Where the PSF model has a well defined fourier transform (as with the Gaussian), this could be sped ip by using the analytic form of the transform
+            import scipy.signal
+            sb = scipy.signal.fftconvolve(sb, psf, 'same')
+
+        ''' Do the PIXELISATION of the image '''
         
         ## Set up pixel response function
+        ##Pixel Response must account for the fineGridFactor, i.e. that in the sotred sb profile, each point is sub-pixel by a factor given by the parameter `fineGridFactor'
+        ## Thus: Set pixel response function to encompass f grid points, bounded by single box of zeros on the outside
         PixResponse = np.zeros((fineGridFactor + 2, fineGridFactor + 2))
         PixResponse[1:-1, 1:-1] = 1./(fineGridFactor*fineGridFactor)
 
@@ -491,8 +642,11 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
 
 def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute = False):
     import surface_Brightness_Profiles as SBPro
+    from generalManipulation import makeIterableList
     '''
     Wrapper function to produce an analytic derivatve of the pixelised image, by using the fact that the model production routines can be called defining the surface brightness profile routine, and the arguments that are passed into it.
+
+    Surface Brightness Profiles: An alterantive SB profile implementation can be provided by using sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, however the Weave implementation uses the output of the Sympy routine in C++ through weave (SciPy), is noticably faster, and has been tested to be exact to the default float precision in python. 
 
     Requires:
     -- modelParams: Disctionary containing default (fixed) values for all parameters which are not being measured
@@ -515,7 +669,7 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
             Res = np.zeros((nP, nPix[0], nPix[1]))
             for i in range(nP):
                 der = [pLab[i]]
-                Res[i,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = der)
+                Res[i,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = der)
         
         elif n == 2:
             Res = np.zeros((nP, nP, nPix[0], nPix[1]))
@@ -523,15 +677,21 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
             for i in range(nP):
                 for j in range(i, nP):
                     der = [pLab[i], pLab[j]]
-                    Res[i,j,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = der)
+                    Res[i,j,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = der)
                     Res[j,i,:,:] = Res[i,j] #Enforce symmetry
 
     else:
         ## Consider the derivative to given order for each parameter entered
         Res = np.zeros((nP, nPix[0], nPix[1]))
         for par in range(nP):
-            der = [pLab]*n
-            Res[par] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = der)
+            ppLab = makeIterableList(pLab[par])
+            if(len(ppLab) == n):
+                der = ppLab
+            #elif(len(pLab) == 1): ##Disabled for now, asmay allow for bugs to be intorduced. For now, only accept cases where pLab labels the derivatives exactly, or raise exception
+            #    der = [pLab]*n
+            else:
+                raise ValueError('differentiate_Pixelised_Model_Analytic - pLab entered is not acceptable for the order of differentiation entered:'+str(n)+':'+str(pLab))
+            Res[par] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = der)
 
     return Res
 
@@ -605,10 +765,3 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
     SB = norm*np.exp(chi2)
     
     return SB
-
-# These need repeated for every model parameter being measured
-def dr_gaussian_SBProfile():
-    return 1.0
-
-def ddr_gaussian_SBProfile():
-    return 1.0

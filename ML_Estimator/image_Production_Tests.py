@@ -7,24 +7,23 @@ import numpy as np
 print 'Running'
 
 imageParams = modPro.default_ModelParameter_Dictionary()
-imageParams['SNR'] = 35.
-imageParams['e1'] = 0.6
-imageParams['e2'] = 0.2
-imageParams['size'] = 8.0
+imageParams['SNR'] = 20.
+imageParams['e1'] = 0.
+imageParams['e2'] = 0.
+imageParams['size'] = 2.0
 imageParams['flux'] = 4.524
 imageParams['stamp_size'] = [30,30]
 imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
 
 
 ###Get image using GALSIM default models
-#image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
+#image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = 'Gaussian', outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
 #image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
 
-
 ##Surface Brightness profile routine
-image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = ['e1', 'e1'])
+image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
 
-imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1','e1'])
+imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
 ### User-defined model with Guassian noise
 #image = np.genfromtxt('./TestPrograms/Hall_Models/fid_image.dat')

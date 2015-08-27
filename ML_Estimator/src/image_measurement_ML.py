@@ -31,8 +31,9 @@ import numpy as np
 import os
 from copy import deepcopy
 
-verbose = False
-debug = False
+verbose = True
+vverbose = False
+debug = True
 
 def estimate_Noise(image, maskCentroid = None):
     '''
@@ -78,9 +79,11 @@ def estimate_Noise(image, maskCentroid = None):
         return res[0]
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, **iParams):
+def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', biasCorrect = 0, bcoutputHandle = None, **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
+    import measure_Bias as mBias
+    from generalManipulation import makeIterableList
     '''
     To Do:
     Pass in prior on model parameters
@@ -112,6 +115,10 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     setParams: Full Dictionary of initial guess/fixed value for set of parameters. If None, this is set to default set. May not be complete: if not, then model parameters set to default as given in default_ModelParameter_Dictionary()
     iParams: generic input which allows model parameters to be set individually. Keys not set are set to default as given by default_ModelParameter_Dictionary(). Where an iParams key is included in the default dictionary, or setParams, it will be updated to this value (**therefore iParams values have preferrence**). If key not present in default is entered, it is ignored
 
+    biasCorrect: int - states what level to correct bias to. Currently accepted value is 0 and 1 [no correction/1st order correction]
+
+    searchMethod: string labelling which method is used to find the minimum chi^2
+
     Side Effects:
 
     Returns:
@@ -142,8 +149,11 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         initialParams = modPro.default_ModelParameter_Dictionary()
     else:
         initialParams = modPro.default_ModelParameter_Dictionary()
-        initialParams.update(setParams)
+        modPro.update_Dictionary(initialParams, setParams)
+        ## Deprecated initialParams.update(setParams)
 
+    set_modelParameter(initialParams, iParams.keys(), iParams.values())
+    ''' Deprecated
     ## This could be done by initialParams.update(iParams), however theis does not check for unsupported keywords
     failedKeyword = 0
     for kw in iParams.keys():
@@ -157,6 +167,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         print '\n Acceptable keywords:'
         print intialParams.keys()
         print ' '
+    '''
 
     ## Define dictionary ``Params'', which stores values which are being varied when evaluating the likelihood
     
@@ -166,15 +177,32 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
 
-    ##Find minimum chi^2 using scipy optimize routine
+    ##Find minimum chi^2 using scipy optimize routines
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
-    #maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    if(searchMethod.lower() == 'simplex'):
+        maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    elif(searchMethod.lower() == 'powell'):
+        maxima = opt.fmin_powell(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    elif(searchMethod.lower() == 'cg'):
+        ##Not tested (10Aug)
+        maxima = opt.fmin_cg(get_logLikelihood, x0 = x0, fprime = differentiate_logLikelihood_Gaussian_Analytic, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug), ftol = 0.000001)
+    elif(searchMethod.lower() == 'bfgs'):
+        ##Not tested (10Aug)
+        maxima = opt.fmin_bfgs(get_logLikelihood, x0 = x0, fprime = differentiate_logLikelihood_Gaussian_Analytic, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    elif(searchMethod.lower() == 'l_bfgs_b'):
+        ##Not tested (10Aug)
+        maxima = opt.fmin_l_bfgs_b(get_logLikelihood, x0 = x0, fprime = differentiate_logLikelihood_Gaussian_Analytic, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    elif(searchMethod.lower() == 'ncg'):
+        ##Not tested (10Aug)
+        maxima = opt.fmin_ncg(get_logLikelihood, x0 = x0, fprime = differentiate_logLikelihood_Gaussian_Analytic, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    else:
+        raise ValueError('find_ML_Estimator - searchMethod entered is not supported:'+str(searchMethod))
 
-    maxima = opt.fmin_powell(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    ##Make numpy array (in the case where 1D is used and scalar is returned):
+    if(len(fitParams)==1):
+        maxima = np.array(makeIterableList(maxima))
 
-    ##Output Result
-    if(outputHandle is not None):
-        np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
+    print 'maxima is:', maxima
 
     if(debug):
         ##Plot and output residual
@@ -203,13 +231,38 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         f = pl.figure()
         ax = f.add_subplot(111)
         im = ax.imshow(residual, interpolation = 'nearest')
+        ax.set_title('Image-Model')
         pl.colorbar(im)
         pl.show()
 
-        
+    if(np.isnan(maxima).sum() > 0):
+        raise ValueError('get_ML_estimator - FATAL - NaNs found in maxima:', maxima)
 
-    ##Return minimised parameters
-    return maxima
+    if(verbose):
+        print 'Maxima found to be:', maxima
+
+    ##Output Result
+    if(outputHandle is not None):
+        np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
+
+    ## Bias Correct
+    if(biasCorrect == 0):
+        return maxima
+    elif(biasCorrect == 1):
+        ana = mBias.analytic_GaussianLikelihood_Bias(maxima, fitParams, modelParams, order = biasCorrect, diffType = 'analytic')
+        bc_maxima = maxima-ana
+
+        ##Output Result
+        if(bcoutputHandle is not None):
+            np.savetxt(bcoutputHandle, np.array(bc_maxima).reshape(1,bc_maxima.shape[0]))
+
+        if(verbose):
+            print 'BC Maxima found to be:', bc_maxima
+
+        ##Return minimised parameters
+        return maxima, bc_maxima
+    else:
+        raise ValueError('get_ML_estimator - biasCorrect(ion) value entered is not applicable:'+ str(biasCorrect))
 
 
 
@@ -286,11 +339,14 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
         raise ValueError('get_logLikelihood - model returned is not of the same shape as the input image.')
     
     #Construct log-Likelihood assuming Gaussian noise. As this will be minimised, remove the -1 preceeding
-    if(verbose):
-        print 'Noise in ln-Like evualtion:', modelParams['noise']
+    if(vverbose):
+        print 'Noise in ln-Like evaluation:', modelParams['noise']
     pixlnL =  (np.power(image-model,2.))
     lnL = pixlnL.sum()
     pixlnL *= 0.5/(modelParams['noise']**2.); lnL *= 0.5/(modelParams['noise']**2.)
+
+    if(vverbose):
+        print 'lnL:', lnL, [ str(pLabels[i])+':'+str(parameters[i]) for i in range(len(pLabels))]
 
     ##Model is noise free, so the noise must be seperately measured and passed in
     ## Answer is independent of noise provided invariant across image
@@ -302,11 +358,11 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     elif(returnType.lower() == 'all'):
         return [lnL, pixlnL]
 
-
 ###---------------- Derivatives of log-Likelihood -----------------------------------------------###
 
-def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None):
+def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None, returnType = None):
     import generalManipulation
+    import model_Production as modPro
     ## May need returnType passed in
 
     '''
@@ -321,6 +377,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     image: 2d <ndarray> of pixelised image
     setParams: dictionary of fixed model parameters which sets the model SB profile being fit.
     modelLookup: An instance of the model lookup table, as set in model_Production module
+    returnType: Ingored!!!
 
     Returns:
     [dlnL/dbeta], repeated for all beta in order <1D ndarray>: derivative of -1*log_likelihood evaulated at entered model parameters
@@ -359,10 +416,10 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
     else:
-        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
+        model = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)[0]
 
 
-    ''' Get model derivatives '''
+    ''' Get model derivatives '''    
     modDer = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 1, permute = False)
     #modDer stores only the n'th derivative of all parameters entered, stored as an nP*nPix*nPix array.
 
@@ -377,8 +434,12 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     ##Alternatively: tdelI = np.repeat(delI.reshape((1,)+delI.shape), modDer.shape[0], axis = 0)
 
     ##Set derivative as sum_pix(delI*derI)/sig^2 for all parameters entered
-    res = (tdI*modDer).sum(axis = -1).sum(axis = -1)
+    ## ReturnTypes other than sum could be implemented by removing the sum pats of this relation, however the implementation of fprime in the minimisation routines requires the return to be a 1D array containing the gradient in each direction.
+    res = (tdelI*modDer).sum(axis = -1).sum(axis = -1)
     res /= -1.*modelParams['noise']*modelParams['noise']
+
+    return res
+    
     ## Note: -ve required as code essentially minimises chi^2
 
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- Bias Correction ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
