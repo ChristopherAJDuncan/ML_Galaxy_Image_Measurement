@@ -10,6 +10,13 @@ from copy import deepcopy
 debug = False
 
 ##--------------Model Dictionary Manipulation------------------------##
+
+'''
+To Do:
+Make class?
+Edit ``setters`` and ``getters`` to ensure that disctionary is of the correct form, with no duplication of keys at different levels
+'''
+
 def default_ModelParameter_Dictionary(**setters):
     '''
     Returns the default parameters used in setting up the model image. Dictionary keyword-value pairs can be passed in to overwrite defaults
@@ -27,7 +34,7 @@ def default_ModelParameter_Dictionary(**setters):
     '''
 
     ### PSF Declaration
-    PSFDict = dict(PSF_Type = 'gaussian', PSF_size = 2., PSF_Gauss_e1 = 0.7, PSF_Gauss_e2 = 0.0)
+    PSFDict = dict(PSF_Type = 0, PSF_size = 2., PSF_Gauss_e1 = 0.7, PSF_Gauss_e2 = 0.0)
 
     ## SB Declaration
     SBDict = dict(modelType = 'gaussian', size = 3., e1 = 0., e2 = 0., flux = 1.e3, magnification = 1., shear = [0., 0.])
@@ -38,12 +45,16 @@ def default_ModelParameter_Dictionary(**setters):
     ## Use this to set SB and PSF parameters - RECURSIVE
     ##set_modelParameter(dct, setters.keys(), setters.values())
 
-    ## Use this to set all parameters
+    update_Dictionary(dct, setters)
+
+    '''
+    ## Use this to set all parameters not contained in a subdirectory
     for kw in setters.keys():
         if kw not in dct:
             print 'find_ML_Estimator - Initial Parameter Keyword:', kw, ' not recognised'
         else:
             dct[kw] = setters[kw]
+    '''
 
     return dct
 
@@ -55,6 +66,7 @@ def unpack_Dictionary(dict, requested_keys = None):
 
 
     if(requested_keys is None):
+        raise RuntimeError('unpack_Dictionary - NoneType for req_keys disabled. Requires recode to produce seperate keys: Try appending output of separate_Keys_byModel')
         requested_keys = dict.keys() ##Make so is iterable (i.e. sperates PSF and SB keys)
     elif(not hasattr(requested_keys, "__iter")):
         requested_keys = makeIterableList(requested_keys)
@@ -81,7 +93,7 @@ def update_Dictionary(d, u):
     import collections
     for k, v in u.iteritems():
         if isinstance(v, collections.Mapping):
-            r = update(d.get(k, {}), v)
+            r = update_Dictionary(d.get(k, {}), v)
             d[k] = r
         else:
             d[k] = u[k]
@@ -136,21 +148,27 @@ def seperate_Keys_byModel(der, vals = None, refParam = None):
 
 
 def set_modelParameter(Dict, param_labels, param_values):
+    from copy import deepcopy
+    from generalManipulation import isIterableList, makeIterableList
     '''
-    Sets model Parameters (as defined above) by input lists
+    Sets model Parameters (as defined above) by input lists. As ooposed to update_Dictionary, this routine allows for the keys to be put in without defining which sub-dictionary they belong to, as seperate_Keys_byModel seperates out into sub-dictionaries specified in the default declaration
     '''
 
-    if(len( param_labels) != len(param_values)):
+    if(not (isIterableList(param_labels) == isIterableList(param_values))):
+        raise ValueError('set_modelParameter - Both  param_labels, param_values must be lists or scalar')
+
+    iparam_labels = makeIterableList(param_labels); iparam_values = makeIterableList(param_values)
+
+    if(len(iparam_labels) != len(iparam_values)):
         raise RuntimeError('set_modelParameter - labels and lists not conformal')
 
     ## Seperate out into respective parts (SB/PSF)
-    SBLab, PSFLab, SBVals, PSFVals = seperate_Keys_byModel(param_labels, param_values)
+    SBLab, PSFLab, SBVals, PSFVals = seperate_Keys_byModel(iparam_labels, iparam_values, refParam = default_ModelParameter_Dictionary())
 
     for i, s in enumerate(SBLab):
         Dict['SB'][s] = SBVals[i]
     for i, s in enumerate(PSFLab):
         Dict['SB'][s] = PSFVals[i]
-        
 
 ##-------------------------Model Production-----------------------------------------##
 def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs):
@@ -328,12 +346,12 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     iParams = copy.deepcopy(Params)
 
     if(der is not None):
-        SBDer, PSFDer = seperate_Keys_byModel(der, iParams)
+        SBDer, PSFDer = seperate_Keys_byModel(der,refParam =  iParams)
     else:
         SBDer, PSFDer = [],[]
 
     ##Deal with unphysical/invalid parameters by retunring a default value for the model (set to zero)
-    if(iParams['e1']*iParams['e1'] + iParams['e2']*iParams['e2'] >= 1. or iParams['size'] <= 0):
+    if(iParams['SB']['e1']*iParams['SB']['e1'] + iParams['SB']['e2']*iParams['SB']['e2'] >= 1. or iParams['SB']['size'] <= 0):
         return np.zeros(iParams['stamp_size'])
 
     if(inputImage is None):
@@ -342,9 +360,9 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         if(iParams['PSF']['PSF_Type']):
             if(iParams['PSF']['PSF_size'] <= 0.):
                 raise ValueError('user_get_Pixelised_Model - PSF Size is invalid (Zero or negative)')
-            enlargementFactor = int(5*np.amax([iParams['size'],iParams['PSF']['PSF_size']])/(np.amin(iParams['stamp_size'])*0.7)+1)
+            enlargementFactor = int(5*np.amax([iParams['SB']['size'],iParams['PSF']['PSF_size']])/(np.amin(iParams['stamp_size'])*0.7)+1)
         else:
-            enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
+            enlargementFactor = int(5*iParams['SB']['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
         tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
         if(Verbose):
             print 'enlargement factor is:', enlargementFactor, tempStampSize
@@ -375,7 +393,7 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         if(sbProfileFunc is None):
             raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
 
-        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], der = SBDer, **sbFuncArgs)
+        sb = sbProfileFunc(xy, cen, iParams['SB']['size'], iParams['SB']['e1'], iParams['SB']['e2'], iParams['SB']['flux'], der = SBDer, **sbFuncArgs)
 
         ''' Get the PSF model and convolve (if appropriate) '''
         ## Default PSF parameters: this would eventually be passed in

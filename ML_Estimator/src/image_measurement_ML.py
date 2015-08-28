@@ -33,7 +33,7 @@ from copy import deepcopy
 
 verbose = True
 vverbose = False
-debug = True
+debug = False
 
 def estimate_Noise(image, maskCentroid = None):
     '''
@@ -82,6 +82,7 @@ def estimate_Noise(image, maskCentroid = None):
 def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', biasCorrect = 0, bcoutputHandle = None, **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
+    from surface_Brightness_Profiles import gaussian_SBProfile_Weave
     import measure_Bias as mBias
     from generalManipulation import makeIterableList
     '''
@@ -152,7 +153,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
         modPro.update_Dictionary(initialParams, setParams)
         ## Deprecated initialParams.update(setParams)
 
-    set_modelParameter(initialParams, iParams.keys(), iParams.values())
+    modPro.set_modelParameter(initialParams, iParams.keys(), iParams.values())
     ''' Deprecated
     ## This could be done by initialParams.update(iParams), however theis does not check for unsupported keywords
     failedKeyword = 0
@@ -177,12 +178,18 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
 
+    if(debug):
+        ##Output Model Dictionary and initial guess information
+        print 'Model Dictionary:', modelParams
+        print '\n Initial Guess:', x0
+        raw_input('Check')
+
     ##Find minimum chi^2 using scipy optimize routines
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
     if(searchMethod.lower() == 'simplex'):
         maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
     elif(searchMethod.lower() == 'powell'):
-        maxima = opt.fmin_powell(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+        maxima = opt.fmin_powell(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
     elif(searchMethod.lower() == 'cg'):
         ##Not tested (10Aug)
         maxima = opt.fmin_cg(get_logLikelihood, x0 = x0, fprime = differentiate_logLikelihood_Gaussian_Analytic, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug), ftol = 0.000001)
@@ -202,15 +209,19 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     if(len(fitParams)==1):
         maxima = np.array(makeIterableList(maxima))
 
-    print 'maxima is:', maxima
+    if(vverbose):
+        print 'maxima is:', maxima
 
     if(debug):
         ##Plot and output residual
         fittedParams = deepcopy(modelParams)
+        modPro.set_modelParameter(fittedParams, fitParams, maxima)
+        ''' Deprecated
         for i in range(len(fitParams)):
             fittedParams[fitParams[i]] =  maxima[i]
+        '''
  
-        model, disc =  modPro.user_get_Pixelised_Model(fittedParams, sbProfileFunc = modPro.gaussian_SBProfile)
+        model, disc =  modPro.user_get_Pixelised_Model(fittedParams, sbProfileFunc = gaussian_SBProfile_Weave)
         residual = image-model
 
         import pylab as pl
@@ -269,6 +280,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None, returnType = 'sum'):
     import math, sys
     import model_Production as modPro
+    import surface_Brightness_Profiles as SBPro
     import generalManipulation
     '''
     Returns the log-Likelihood for I-Im, where Im is image defined by dictionary ``modelParams'', and I is image being analysed.
@@ -313,18 +325,18 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     '''
 
     #Test reasonable model values - Effectively applying a hard prior
-    if(math.sqrt(modelParams['e1']**2. + modelParams['e2']**2.) >= 0.99):
+    if(math.sqrt(modelParams['SB']['e1']**2. + modelParams['SB']['e2']**2.) >= 0.99):
         ##Set log-probability to be as small as possible
         return sys.float_info.max/10 #factor of 10 to avoid any chance of memory issues here
         #raise ValueError('get_logLikelihood - Invalid Ellipticty values set')
-    if(modelParams['size'] <= 0.):
+    if(modelParams['SB']['size'] <= 0.):
         return sys.float_info.max/10
 
     ''' Get Model'''
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
     else:
-        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)
+        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
 
     ''' Model, lookup comparison '''
     '''

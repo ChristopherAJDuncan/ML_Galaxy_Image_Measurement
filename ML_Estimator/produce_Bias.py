@@ -7,23 +7,30 @@ import numpy as np
 import src.image_measurement_ML as ML
 import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
+import sys
 
-Output = './ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
+Output = './ML_Output/SNRBias/28Aug2015/1D/e2/xtol_minus5/Lookup/'
+#'./ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
 #'./ML_Output/SNRBias/9Jul2015/e1/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
-filePrefix = 'e10p3'
+filePrefix = 'e20p3'
 produce = [1,1] #Analytic, Sims
 
 ### Set-up
 
 
-SNRRange = [150., 201., 50.] #Min, Max, Interval
+if(len(sys.argv) >= 2):
+    ##Argument passed in: assumed to be SNR for single SNR run
+    inputSNR = float(sys.argv[1])
+    SNRRange = [inputSNR, inputSNR, 1.]
+else:
+    SNRRange = [150., 201., 50.] #Min, Max, Interval
 minimiseMethod = 'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
 #fittedParameters = dict(e1 = 0.3, e2 = 0.2)
 #initialGuess = dict(e1 = 0.0, e2 = 0.0)
-fittedParameters = dict(e1 = 0.3)
-initialGuess = dict(e1 = 0.25)
+fittedParameters = dict(e2 = 0.3)
+initialGuess = dict(e2 = 0.25)
 #fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
 #initialGuess = dict(size = 1.0)
 
@@ -34,12 +41,13 @@ fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.va
 
 ##Initial Galaxy Set up
 imageShape = (15., 15.) #size = 0.84853
-imageParams = dict(size = 1.2, e1 = 0.0, e2 = 0.0, centroid = (np.array(imageShape)+1)/2, flux = 4.524, \
-                   magnification = 1., shear = [0., 0.], noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
-                   modelType = 'gaussian')
+imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.2, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0., 0.], flux = 4.524, modelType = 'gaussian'),\
+                                                       centroid = (np.array(imageShape)+1)/2, noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
+                                                       )
+
 
 ## Model Lookup Defintions - Overridden in the number of fitted parameters is greater than one
-useLookup = False
+useLookup = True
 ## 1D Ellipticity lookup
 
 lookupRange = [-0.99, 0.99]
@@ -86,7 +94,7 @@ def bias_bySNR_analytic():
     import src.model_Production as modPro
 
     global imageParams
-    imageParams.update(fittedParameters)
+    modPro.set_modelParameter(imageParams, fitParamsLabels, fitParamsValues)
 
     handle = intialise_Output(Output+filePrefix+'_AnaBias.dat', mode = 'a')
     handle.write('## Recovered statistics as a result of bias run, single fit at a time, done analytically. Output of form [Bias] repeated for all fit quantities \n')
@@ -115,7 +123,7 @@ def bias_bySNR_analytic():
 
         print 'Analytic Bias Check: For SNR', SNR, ' has noise var:', imageParams['noise']
         ## Check image to get SNR
-        imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
+        imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
         imageParams['noise'] = modPro.SNR_Mapping(imageSB, SNR = SNR)
 
         bias = np.array(mBias.analytic_GaussianLikelihood_Bias(fitParamsValues, fitParamsLabels, imageParams, diffType = 'ana'))
@@ -125,8 +133,6 @@ def bias_bySNR_analytic():
         print ' '
 
         ### different to bias_bySNR
-        print 'bias shape check:', bias.reshape(bias.shape[0], 1).shape, np.array(SNR).reshape(1,1).shape
-        print ':', np.hstack((np.array(SNR).reshape(1,1),bias.reshape(1,bias.shape[0]))).shape
         np.savetxt(handle, np.hstack((np.array(SNR).reshape(1,1),bias.reshape(1,bias.shape[0]))))#.reshape(1,bias.shape[1]+1))
 
     handle.close()
@@ -143,15 +149,15 @@ def bias_bySNR():
     nRealisation = 10000000 ##This labels the maximum number of iterations
     percentError = 1
 
-    global imageParams
-    imageParams.update(fittedParameters)
+    global imageParams    
+    modPro.set_modelParameter(imageParams, fitParamsLabels, fitParamsValues)
 
     ##Get NoiseFree Image
-    noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
+    noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
 
     modelLookup = None
     if(len(fitParamsLabels) <= 2 and useLookup):
-        modelLookup =  modPro.get_Model_Lookup(imageParams, fitParamsLabels, lookupRange, lookupWidth, noiseType = None, sbProfileFunc = modPro.gaussian_SBProfile)
+        modelLookup =  modPro.get_Model_Lookup(imageParams, fitParamsLabels, lookupRange, lookupWidth, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
         print 'Created model lookup table'
 
 
@@ -186,12 +192,12 @@ def bias_bySNR():
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
 
             ## GALSIM with user-defined SB Profile
-            #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile)
+            #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
             ## SYMPY - Very slow
             #modPro.get_Pixelised_Model_wrapFunction(0., imageParams, noiseType = 'G', outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
             ## Entirely user-defined
-            image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = modPro.gaussian_SBProfile, inputImage = noiseFreeImage)
+            image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = SBPro.gaussian_SBProfile_Weave, inputImage = noiseFreeImage)
 
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
