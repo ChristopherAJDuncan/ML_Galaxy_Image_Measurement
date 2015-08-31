@@ -9,10 +9,10 @@ import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 import sys
 
-Output = './ML_Output/SNRBias/28Aug2015/1D/e2/xtol_minus5/Lookup/'
+Output = './ML_Output/SNRBias/28Aug2015/1D/e1/xtol_minus5/Lookup/Simplex/BiasCorrected/'
 #'./ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
 #'./ML_Output/SNRBias/9Jul2015/e1/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
-filePrefix = 'e20p3'
+filePrefix = 'e10p3'
 produce = [1,1] #Analytic, Sims
 
 ### Set-up
@@ -24,20 +24,25 @@ if(len(sys.argv) >= 2):
     SNRRange = [inputSNR, inputSNR, 1.]
 else:
     SNRRange = [150., 201., 50.] #Min, Max, Interval
-minimiseMethod = 'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
+minimiseMethod = 'simplex'#'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
 #fittedParameters = dict(e1 = 0.3, e2 = 0.2)
 #initialGuess = dict(e1 = 0.0, e2 = 0.0)
-fittedParameters = dict(e2 = 0.3)
-initialGuess = dict(e2 = 0.25)
+fittedParameters = dict(e1 = 0.3)
+initialGuess = dict(e1 = 0.)
 #fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
 #initialGuess = dict(size = 1.0)
 
-
 fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.values()
 
+## preSearchMethod defines whether a grid-based method is used to define an initial guess. Will give a lot of slow-down for large parameter spaces, but likely to reduce the effect of local mimina or dependancies on initial guesses
+preSearchMethod = 'grid'
+## bruteRange must be a tuple of 2-element lists (or three element slice), even in the 1D case
+bruteRange = [(-0.9, 0.9)]
 
+## If >=1, the ML Estiamtor routine will correct to that order (only coded to first order as of 31 Aug 2015)
+biasCorrect = 1
 
 ##Initial Galaxy Set up
 imageShape = (15., 15.) #size = 0.84853
@@ -186,7 +191,16 @@ def bias_bySNR():
         for k in imageParams.keys():
             handle.write('#'+str(k)+' = '+str(imageParams[k])+'\n')
 
-        MaxL = np.zeros((nRealisation, len(fitParamsLabels)))
+        ## Output Bias Corrected value
+        bchandle = None
+        if(biasCorrect):
+            bchandle = intialise_Output(Output+filePrefix+'_SNR'+str(SNR)+'_BC.dat', mode = 'a')
+            bchandle.write('# Bias Corrected Bias Run Output. Following is input image parameters \n')
+            for k in imageParams.keys():
+                bchandle.write('#'+str(k)+' = '+str(imageParams[k])+'\n')
+            
+
+        MaxL = np.zeros((nRealisation, len(fitParamsLabels))); BCMaxL = np.zeros(MaxL.shape)
         for real in range(nRealisation):
             ## This version uses GALSIM default
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
@@ -202,7 +216,10 @@ def bias_bySNR():
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             ##Find usign lookup table where appropriate
-            MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, setParams = imageParams.copy(), **initialGuess) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
+            if(biasCorrect):
+                MaxL[real,:], BCMaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, preSearchMethod = preSearchMethod, bruteRange = bruteRange, biasCorrect = biasCorrect, bcoutputHandle = bchandle, setParams = imageParams.copy(), **initialGuess)
+            else:
+                MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, preSearchMethod = preSearchMethod, bruteRange = bruteRange, biasCorrect = biasCorrect, bcoutputhandle = bchandle, setParams = imageParams.copy(), **initialGuess)
 
             if(real > 10000 and real%1000 == 0 and percentError > 0.):
                 Mean = (MaxL[:real,:].mean(axis = 0)-fitParamsValues); Err = MaxL[:real,:].std(axis = 0)/np.sqrt(real)

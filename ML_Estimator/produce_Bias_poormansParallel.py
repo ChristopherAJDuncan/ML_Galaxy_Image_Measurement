@@ -5,7 +5,7 @@ import time
 
 SNRRange = [15., 51., 5.]
 ##This manually needs changed in both routines
-outputDirectory = './ML_Output/SNRBias/28Aug2015/1D/e2/xtol_minus5/Lookup/' 
+outputDirectory = './ML_Output/SNRBias/28Aug2015/1D/e1/xtol_minus5/Lookup/Simplex/BiasCorrected/' 
 
 for SNR in np.arange(*SNRRange):
     command = './produce_Bias.py '+str(SNR)+' > '+outputDirectory+'/Log_'+str(SNR)+' &'

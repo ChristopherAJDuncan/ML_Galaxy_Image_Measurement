@@ -32,7 +32,7 @@ import os
 from copy import deepcopy
 
 verbose = True
-vverbose = False
+vverbose  = False
 debug = False
 
 def estimate_Noise(image, maskCentroid = None):
@@ -77,9 +77,39 @@ def estimate_Noise(image, maskCentroid = None):
         return res[np.argmin(np.absolute(np.diff(res)))]
     else:
         return res[0]
+
+
+## -o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o----- Error Estimation -----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
+
+def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
+    '''
+    TESTED: Not on any level (31Aug2015)
+    
+    Calculates the marginalised fisher error on the set of fitParams around maximum-likelihood point ML.
+
+    Note: As the Fisher Matrix assumes that the likelihood is Gaussian around the ML point (in *parameter* space), this estimate is likely to be inaccurate for parameters which are non-linearly related to the observed image value at any point
+
+    Uses the fact that for a Gaussian likelihood (on pixel values, not parameters): ddlnP/(dtheta_i dtheta_j) = 1/sigma^2*sum_pix[delI*model_,ij - model_,i*model_,j]
+
+    Requires:
+    ML: Computed ML point, entered as 1D list/tuple/numpy array
+    fitParams: list of strings, labelling the parameters to be fit as defined in model dictionary definition
+    image: 2D ndarray, containing image postage stamp
+    setParams: model disctionary defining all fixed parameters
+    modelLookup: modelLookup table as defined in find_ML_Estimator
+    '''
+
+    parameters = ML.copy(); pLabels = fitParams.copy()
+
+    ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
+    ddlnL = -1.*ddlnL ##This is now the Fisher Matrix
+
+    Fin = np.linalg.inv(ddlnL)
+
+    return np.sqrt(np.diag(Fin))
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', biasCorrect = 0, bcoutputHandle = None, **iParams):
+def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, bcoutputHandle = None, **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
     from surface_Brightness_Profiles import gaussian_SBProfile_Weave
@@ -119,6 +149,8 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     biasCorrect: int - states what level to correct bias to. Currently accepted value is 0 and 1 [no correction/1st order correction]
 
     searchMethod: string labelling which method is used to find the minimum chi^2
+
+    preSearchMethod: if not None, then code will run an intial, coarse search over the parameter space to attempt to find the global mimima. By default this is switched off. Where preSearchMethod == grid or brute, the a grid based search is used. Where this is used, a range must either be entered by the user through bruteRange, or it is taken from the entered prior information. NOTE: This still uses a typically coarse grid, therefore if the range is too wide then it is possible that the code may still find a local mimimum if this exists within one grid point interval of the global miminum.
 
     Side Effects:
 
@@ -178,6 +210,29 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
 
+    if(preSearchMethod is not None):
+        ## Conduct a presearch of the parameter space to set initial guess (usually grid-based or brute-force)
+        if(vverbose or debug):
+            print '\n Conducting a pre-search of parameter space to idenitfy global minima'
+        if(preSearchMethod.lower() == 'grid' or preSearchMethod.lower() == 'brute'):
+            ##Brute force method over a range either set as the prior, or the input range.
+            if(bruteRange is not None):
+                if(vverbose or debug):
+                    print '\n Using user-defined parameter range:', bruteRange
+
+                x0 = opt.brute(get_logLikelihood, ranges = bruteRange, args = (fitParams, image, modelParams, modelLookup, 'sum'))
+
+                if(vverbose or debug):
+                    print '\n preSearch has found a minimum (on a coarse grid) of:', x0
+                
+            elif(Prior is not None):
+                if(vverbose or debug):
+                    print '\n Using prior range'
+                raise RuntimeError('find_ML_Estimator - Prior entry has not yet been coded up')
+
+            else:
+                raise RuntimeError('find_ML_Estimator - Brute preSearch is active, but prior or range is not set')
+
     if(debug):
         ##Output Model Dictionary and initial guess information
         print 'Model Dictionary:', modelParams
@@ -187,7 +242,9 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     ##Find minimum chi^2 using scipy optimize routines
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
     if(searchMethod.lower() == 'simplex'):
-        maxima = opt.fmin(get_logLikelihood, x0 = x0, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+        maxima = opt.fmin(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    elif(searchMethod.lower() == 'brent'):
+        maxima = opt.fmin_brent(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
     elif(searchMethod.lower() == 'powell'):
         maxima = opt.fmin_powell(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
     elif(searchMethod.lower() == 'cg'):
@@ -376,7 +433,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 
 ###---------------- Derivatives of log-Likelihood -----------------------------------------------###
 
-def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None, returnType = None):
+def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None, returnType = None, order = 1, signModifier = -1.):
     import generalManipulation
     import model_Production as modPro
     ## May need returnType passed in
@@ -396,7 +453,8 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     returnType: Ingored!!!
 
     Returns:
-    [dlnL/dbeta], repeated for all beta in order <1D ndarray>: derivative of -1*log_likelihood evaulated at entered model parameters
+    [dlnL/dbeta], repeated for all beta in order <1D ndarray>: derivative of -1*log_likelihood evaulated at entered model parameters if order == 1
+    [dlnL/dbeta_i dbeta_j], repeated for all beta in order <2D ndarray>: second derivative of -1*log_likelihood evaulated at entered model parameters if order == 1
 
 
     '''
@@ -439,20 +497,35 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     modDer = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 1, permute = False)
     #modDer stores only the n'th derivative of all parameters entered, stored as an nP*nPix*nPix array.
 
+    if(order == 2):
+        ##Calculate 2nd derivative also
+        modDer2 = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 2, permute = True)
+            #modDer2 stores the 2nd derivative of all parameters entered, stored as an nP*nP*nPix*nPix array.
+
     ##Construct the result to be returned. This is a scalar array, with length equal to nP, and where each element corresponds to the gradient in that parameter direction
     nP = len(parameters)
     delI = image - model
 
-    res = np.zeros(nP)
+    if(order == 1):
+        res = np.zeros(nP)
+        
+        ##Create tdI, which stores dI in the same shape as modDer by adding a first dimension
+        tdelI = np.zeros(modDer.shape); tdelI[:] = delI.copy()
+        ##Alternatively: tdelI = np.repeat(delI.reshape((1,)+delI.shape), modDer.shape[0], axis = 0)
 
-    ##Create tdI, which stores dI in the same shape as modDer
-    tdelI = np.zeros(modDer.shape); tdelI[:] = delI.copy()
-    ##Alternatively: tdelI = np.repeat(delI.reshape((1,)+delI.shape), modDer.shape[0], axis = 0)
+        ##Set derivative as sum_pix(delI*derI)/sig^2 for all parameters entered
+        ## ReturnTypes other than sum could be implemented by removing the sum pats of this relation, however the implementation of fprime in the minimisation routines requires the return to be a 1D array containing the gradient in each direction.
+        res = (tdelI*modDer).sum(axis = -1).sum(axis = -1)
+        res /= (signModifier/abs(signModifier))*modelParams['noise']*modelParams['noise']
+    elif(order == 2):
+        ##This could and should be sped-up using two single loops rather than a nested loop, or by defining delI and dIm*dIm in the same dimension as modDer2
+        for i in range(nP):
+            for j in range(nP):
+                res[i,j] = (delI*modDer2[i,j] - modDer[i]*modDer[j]).sum(axis = -1).sum(axis = -1)
 
-    ##Set derivative as sum_pix(delI*derI)/sig^2 for all parameters entered
-    ## ReturnTypes other than sum could be implemented by removing the sum pats of this relation, however the implementation of fprime in the minimisation routines requires the return to be a 1D array containing the gradient in each direction.
-    res = (tdelI*modDer).sum(axis = -1).sum(axis = -1)
-    res /= -1.*modelParams['noise']*modelParams['noise']
+        res /= (signModifier/abs(signModifier))*modelParams['noise']*modelParams['noise']
+
+
 
     return res
     
