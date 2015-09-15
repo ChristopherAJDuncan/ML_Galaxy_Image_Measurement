@@ -9,10 +9,11 @@ import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 import sys
 
-Output = './ML_Output/SNRBias/28Aug2015/1D/e1/xtol_minus5/Lookup/Simplex/BiasCorrected/'
+Output = './Testing/'
+#'./ML_Output/SNRBias/28Aug2015/2D/e1_e2/xtol_minus5/NoLookup/Simplex/BiasCorrected/LowSNR/'
 #'./ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
 #'./ML_Output/SNRBias/9Jul2015/e1/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
-filePrefix = 'e10p3'
+filePrefix = 'e10p3_e20p3'
 produce = [1,1] #Analytic, Sims
 
 ### Set-up
@@ -27,10 +28,10 @@ else:
 minimiseMethod = 'simplex'#'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
-#fittedParameters = dict(e1 = 0.3, e2 = 0.2)
-#initialGuess = dict(e1 = 0.0, e2 = 0.0)
-fittedParameters = dict(e1 = 0.3)
-initialGuess = dict(e1 = 0.)
+fittedParameters = dict(e1 = 0.3, e2 = 0.3)
+initialGuess = dict(e1 = 0.25, e2 = 0.25)
+#fittedParameters = dict(e1 = 0.3)
+#initialGuess = dict(e1 = 0.)
 #fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
 #initialGuess = dict(size = 1.0)
 
@@ -39,7 +40,8 @@ fitParamsLabels = fittedParameters.keys(); fitParamsValues = fittedParameters.va
 ## preSearchMethod defines whether a grid-based method is used to define an initial guess. Will give a lot of slow-down for large parameter spaces, but likely to reduce the effect of local mimina or dependancies on initial guesses
 preSearchMethod = 'grid'
 ## bruteRange must be a tuple of 2-element lists (or three element slice), even in the 1D case
-bruteRange = [(-0.9, 0.9)]
+#bruteRange = [(-0.9, 0.9)]
+bruteRange = [(0.21, 0.39), (0.21, 0.39)]
 
 ## If >=1, the ML Estiamtor routine will correct to that order (only coded to first order as of 31 Aug 2015)
 biasCorrect = 1
@@ -48,20 +50,26 @@ biasCorrect = 1
 imageShape = (15., 15.) #size = 0.84853
 imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.2, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0., 0.], flux = 4.524, modelType = 'gaussian'),\
                                                        centroid = (np.array(imageShape)+1)/2, noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
+                                                       PSF = dict(PSF_Type = 0, PSF_size = 1., PSF_Gauss_e1 = 0.1, PSF_Gauss_e2 = 0.0)
                                                        )
 
 
 ## Model Lookup Defintions - Overridden in the number of fitted parameters is greater than one
-useLookup = True
+useLookup = False
 ## 1D Ellipticity lookup
-
+'''
 lookupRange = [-0.99, 0.99]
 lookupWidth = [0.001]
 '''
 ##2D Ellipticity Lookup
+'''
 lookupRange = [[-0.99, 0.99],[-0.99, 0.99]]
 lookupWidth = [0.01,0.01]
 '''
+##High Res 2D Ellipticity lookup
+lookupRange = [[0.2, 0.4],[0.2, 0.4]]
+lookupWidth = [0.001,0.001]
+
 
 def intialise_Output(filename, mode = 'w', verbose = True):
     import os
@@ -126,10 +134,11 @@ def bias_bySNR_analytic():
         ##Produce image to update noise to correct value (THIS IS A HACK AND NEEDS CHANGED) - estimate_Noise works fairly well, but you need to specify the noise correctly
         #disc, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', outputImage = False)
 
-        print 'Analytic Bias Check: For SNR', SNR, ' has noise var:', imageParams['noise']
         ## Check image to get SNR
         imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
         imageParams['noise'] = modPro.SNR_Mapping(imageSB, SNR = SNR)
+
+        print 'Analytic Bias Check: For SNR', SNR, ' has noise var:', imageParams['noise']
 
         bias = np.array(mBias.analytic_GaussianLikelihood_Bias(fitParamsValues, fitParamsLabels, imageParams, diffType = 'ana'))
         #bias = np.array([mBias.analytic_GaussianLikelihood_Bias(fitParamsValues[e], fitParamsLabels[e], imageParams, diffType = 'ana')])

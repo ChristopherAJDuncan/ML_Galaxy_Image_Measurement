@@ -23,6 +23,8 @@ imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
 ##Surface Brightness profile routine
 image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
 
+exit()
+
 imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
 ### User-defined model with Guassian noise

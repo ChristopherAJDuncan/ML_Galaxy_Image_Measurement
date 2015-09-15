@@ -31,7 +31,7 @@ import numpy as np
 import os
 from copy import deepcopy
 
-verbose = True
+verbose = False
 vverbose  = False
 debug = False
 
@@ -82,6 +82,7 @@ def estimate_Noise(image, maskCentroid = None):
 ## -o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o----- Error Estimation -----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
 
 def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
+    from copy import deepcopy
     '''
     TESTED: Not on any level (31Aug2015)
     
@@ -97,9 +98,13 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     image: 2D ndarray, containing image postage stamp
     setParams: model disctionary defining all fixed parameters
     modelLookup: modelLookup table as defined in find_ML_Estimator
+
+    Tests:
+    -- Value of marginalised error is verified to be comparable to the variance over 5x10^5 simulated images for e1, e2 as free parameters without a prior.
+    
     '''
 
-    parameters = ML.copy(); pLabels = fitParams.copy()
+    parameters = deepcopy(ML); pLabels = deepcopy(fitParams)
 
     ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
     ddlnL = -1.*ddlnL ##This is now the Fisher Matrix
@@ -109,7 +114,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     return np.sqrt(np.diag(Fin))
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, bcoutputHandle = None, **iParams):
+def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, bcoutputHandle = None, error = 'Fisher', **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
     from surface_Brightness_Profiles import gaussian_SBProfile_Weave
@@ -220,7 +225,18 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
                 if(vverbose or debug):
                     print '\n Using user-defined parameter range:', bruteRange
 
-                x0 = opt.brute(get_logLikelihood, ranges = bruteRange, args = (fitParams, image, modelParams, modelLookup, 'sum'))
+                #x0, fval, bruteGrid, bruteVal
+                bruteOut = opt.brute(get_logLikelihood, ranges = bruteRange, args = (fitParams, image, modelParams, modelLookup, 'sum'), finish = None, full_output = True)
+                x0, fval, bruteGrid, bruteVal = bruteOut
+                ## x0 has len(nParam); fval is scalar; bruteGrid has len(nParam), nGrid*nParam; bruteVal has nGrid*nParam
+
+                ###Evaluate error based on brute by integration - this would only work if bruteRange cover the full range where the PDF is non-zero
+
+                if(error.lower() = 'brute'):
+                    raise RuntimeError('find_ML_Estimator - brute labelled as means of evaluating error. This is possbible, but not coded as limitation in use of bruteRange to cover the whole region where the likelihood is non-zero. When a prior is included, this could be taken to be exact, provided one knows the range where the prior has compact support, and the bruteRange reflects this.')
+                ## use scipy.integrate.trapz(bruteVal, x = bruteGrid[i], axis = i) with i looping over all parameters (ensure axis set properly...
+
+                
 
                 if(vverbose or debug):
                     print '\n preSearch has found a minimum (on a coarse grid) of:', x0
@@ -233,11 +249,10 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
             else:
                 raise RuntimeError('find_ML_Estimator - Brute preSearch is active, but prior or range is not set')
 
-    if(debug):
+    if(debug or vverbose):
         ##Output Model Dictionary and initial guess information
         print 'Model Dictionary:', modelParams
         print '\n Initial Guess:', x0
-        raw_input('Check')
 
     ##Find minimum chi^2 using scipy optimize routines
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
@@ -271,6 +286,8 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     if(debug):
         ##Plot and output residual
+        print 'Plotting residual..'
+        
         fittedParams = deepcopy(modelParams)
         modPro.set_modelParameter(fittedParams, fitParams, maxima)
         ''' Deprecated
@@ -308,6 +325,12 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     if(verbose):
         print 'Maxima found to be:', maxima
+
+    ## Get Error on measurement. Brute error would have been constructed on the original brute force grid evaluation above.
+    if(error.lower() == 'fisher'):
+        err = fisher_Error_ML(maxima, fitParams, image, setParams, modelLookup) #Use finalised modelParams here?
+        print 'Error calculated (ML, err:)', maxima, err
+        raw_input('Check - Delete this when a method of outputting is applied')
 
     ##Output Result
     if(outputHandle is not None):
@@ -436,6 +459,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None, returnType = None, order = 1, signModifier = -1.):
     import generalManipulation
     import model_Production as modPro
+    from surface_Brightness_Profiles import gaussian_SBProfile_Weave
     ## May need returnType passed in
 
     '''
@@ -456,6 +480,10 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     [dlnL/dbeta], repeated for all beta in order <1D ndarray>: derivative of -1*log_likelihood evaulated at entered model parameters if order == 1
     [dlnL/dbeta_i dbeta_j], repeated for all beta in order <2D ndarray>: second derivative of -1*log_likelihood evaulated at entered model parameters if order == 1
 
+    Known Issues:
+
+    Possible Extensions:
+    -- In calculating second order derivatives, a nested loop is used. This is likely to be slow, and as this is used in producing fisher errors (and thus done every run-time), then this cold be a bottle-neck on the measurement of the ML point where errors are used
 
     '''
     
@@ -480,17 +508,13 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
         raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test)')
 
     ##Vary parameters which are being varied as input
-    for l in range(len(pLabels)):
-        if(pLabels[l] not in modelParams):
-            raw_input('Error setting model parameters in get_logLikelihood: Parameter not recognised. <Enter> to continue')
-        else:
-            modelParams[pLabels[l]] = parameters[l]
+    modPro.set_modelParameter(modelParams, pLabels, parameters)
 
     ''' Get Model'''
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
     else:
-        model = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = modPro.gaussian_SBProfile)[0]
+        model = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = gaussian_SBProfile_Weave)[0]
 
 
     ''' Get model derivatives '''    
@@ -518,7 +542,9 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
         res = (tdelI*modDer).sum(axis = -1).sum(axis = -1)
         res /= (signModifier/abs(signModifier))*modelParams['noise']*modelParams['noise']
     elif(order == 2):
+        res = np.zeros((nP,nP))
         ##This could and should be sped-up using two single loops rather than a nested loop, or by defining delI and dIm*dIm in the same dimension as modDer2
+        ## Alternate speed-up is to implement with Weave
         for i in range(nP):
             for j in range(nP):
                 res[i,j] = (delI*modDer2[i,j] - modDer[i]*modDer[j]).sum(axis = -1).sum(axis = -1)

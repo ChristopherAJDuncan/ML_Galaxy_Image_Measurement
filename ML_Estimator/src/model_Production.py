@@ -226,7 +226,7 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
 
 def SNR_Mapping(model, var = None, SNR = None):
     '''
-    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition
+    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition. Model passed in should be noise-free.
     '''
     if(var is None and SNR is not None):
         return np.sqrt(np.power(model,2.).sum()/(SNR*SNR))
@@ -241,7 +241,7 @@ def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
     ''' Create a lookup table for the model creation - Useful only for the 1D or 2D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] '''
     '''
     Requires:
-    --- setParams - dictionary containign the default value for all other parameters
+    --- setParams - dictionary containign the default value for all other model parameters
     --- pLabel - string labelling the parameter being fit (that which the lookup grid is evaluated
     --- pRange - the range over which the model is evaluated
     --- dP - the step size of the evaluation
@@ -293,7 +293,7 @@ def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
                 images[pp][qq] = user_get_Pixelised_Model(Params, **modelFuncArgs)[0]
 
     ### Pack up into a dictionary
-    return dict(useLookup = True, Grid = pGrid, Images = images, width = idP, nP = nPar)
+    return dict(useLookup = True, Grid = pGrid, Images = images, width = idP, nP = nPar, interp = None)
 
 
 def return_Model_Lookup(lookup, P):
@@ -308,23 +308,40 @@ def return_Model_Lookup(lookup, P):
     '''
 
     ##
-    if(lookup['nP'] == 1):
-        index = int(round((P[0]-lookup['Grid'][0])/lookup['width']))
-    elif lookup['nP'] == 2:
-        index = [int(round((P[0]-lookup['Grid'][0][0])/lookup['width'][0])), int(round((P[1]-lookup['Grid'][1][0])/lookup['width'][1]))]
-    else:
-        raise RuntimeError('return_Model_Lookup - Lookup can only support up to 2 parameters')
-            
+    if(lookup['interp'] is None):
+        if(lookup['nP'] == 1):
+            index = int(round((P[0]-lookup['Grid'][0])/lookup['width']))
+        elif lookup['nP'] == 2:
+            index = [int(round((P[0]-lookup['Grid'][0][0])/lookup['width'][0])), int(round((P[1]-lookup['Grid'][1][0])/lookup['width'][1]))]
+        else:
+            raise RuntimeError('return_Model_Lookup - Lookup can only support up to 2 parameters')
+    elif(lookup['interp'].lower() == 'lin' or lookup['interp'].lower() == 'linear'):
+        if(lookup['nP'] == 1):
+            index = int((P[0]-lookup['Grid'][0])/lookup['width'])
+        elif lookup['nP'] == 2:
+            index = [int((P[0]-lookup['Grid'][0][0])/lookup['width'][0]), int((P[1]-lookup['Grid'][1][0])/lookup['width'][1])]
+        else:
+            raise RuntimeError('return_Model_Lookup - Lookup can only support up to 2 parameters')
+        
     if((np.array(index) < 0).sum() > 0):
         raise RuntimeError('return_Model_Lookup - Error with returning model lookup index - negative - Check entered range')
     if((np.array(index) > len(lookup['Images'])).sum() > 0):
         raise RuntimeError('return_Model_Lookup - Error with returning model lookup index - Larger than grid - Check entered range')
 
-    if(lookup['nP'] == 1):
-        return lookup['Images'][index], index
-    else:
-        return lookup['Images'][index[0]][index[1]], index
-    
+    if(lookup['interp'] is None):
+        if(lookup['nP'] == 1):
+            return lookup['Images'][index], index
+        else:
+            return lookup['Images'][index[0]][index[1]], index
+    elif(lookup['interp'].lower() == 'lin' or lookup['interp'].lower() == 'linear'):
+        ## Not tested (15th Sept 2015 cajd)
+        if(lookup['nP'] == 1):
+            grad = (lookup['Images'][index+1]-lookup['Images'][index])/(lookup['Grid'][index+1]-lookup['Grid'][index])
+            rImage = grad*(P[0]-lookup['Grid'][index]) + lookup['Images'][index]
+            return rImage, index
+        else:
+            raise ValueError('lookup - 2D interpolation not yet coded...')
+            grad = (lookup['Images'][index+1]-lookup['Images'][index])/(lookup['Grid'][index+1]-lookup['Grid'][index])
 
 ### ---------------------------------------------------------------- END Model Production - Lookup Table ----------------------------------------------------------------------------------------------------- ###
 
@@ -467,6 +484,12 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     if(noiseType is not None):
 
         if(noiseType.lower() == 'g'):
+
+            ''' #Enable this to confirm that noise is added when appropriate
+            print 'Applying Noise to image'
+            raw_input('ModPro Check')
+            '''
+            
             ##Apply Gaussian radnom noise to each pixel using a Guassian model
             ## Get Noise Variance by SNR
             iParams['noise'] = SNR_Mapping(Res, SNR = iParams['SNR']) ##This preserves flux

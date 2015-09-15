@@ -106,7 +106,6 @@ def bias_components(parameter_derivatives, noise):
     '''
 
     nPar = len(parameter_derivatives[0])
-    print 'nParameter Check:', nPar
 
     ##Copy input parameter derivatives list for ease of notation
     pDer = list(parameter_derivatives)
