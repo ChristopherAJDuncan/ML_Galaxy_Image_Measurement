@@ -1,19 +1,30 @@
-'''
-Module containing the general routines for the production of a non-Pixelised (etc.) surface brightness profile and its derivatives. This particualr version uses sympy to producederivatives of an anlytic function.
+"""
+Module containing the general routines for the production of a non-Pixelised (etc.) surface brightness profile and its derivatives. If run as a stand-alone program, the code will output the functional form of the profile or it's derivatives as specified, as well as C++-ified output to enable easy implementation of Weave for new profiles. See the bottom of the file for details.
 
 Author: cajd
 Touch Date: 16 June 2015
-'''
+"""
 
 import numpy as np
 
 def gaussian_SBProfile_Sympy(xy, cen, isigma, ie1, ie2, iItot, K = 0., g1 = 0., g2 = 0., der = [], printOnly = False, suppressLensing = True, printStyle = 'CPP'):
     import sympy as sp
-    '''
+    """
+    Uses symbolic python pacakge (SymPy) to evaluate function and its derivatives analytically, including symbolic output. As symbolic, this is noticably slow, so should not be used as part of main routine except to debug.
 
+    Requires:
+    -- xy: Grid [x,y] over which SB profile is evaluated
+    -- cen: Centroid [x,y]
+    -- isigma: Size of SB profile
+    -- ie1, ie2: Ellipticity components of SB profile
+    -- iTOT: Total integrated flux, corresponding to amplitude of profile in Gaussian case.
+    -- K, g1, g2: Lensing Parameters
     ---der: Sets the parameters to be differentiated with respect to. The size of each sub-list sets the order of differentiation. e.g. to return SB profile, use der = [] (or leave at default. To get d2I/dr2: der = ['size', 'size'], an To get d2I/drde1: der = ['size', 'e1'] etc.
+    -- printOnly: default False - If true, only output the symbolic result to screen. If false, evaluate and return the result
+    --suppressLensing: default True -  if True, ignore the lensing contribution
+    -- printStyle: default CPP - If CPP, output to screen in C++ form
 
-    '''
+    """
     ## Edit this to pass in model parameters
     from math import pi
 
@@ -77,6 +88,9 @@ def gaussian_SBProfile_Sympy(xy, cen, isigma, ie1, ie2, iItot, K = 0., g1 = 0., 
 
 ### SymPy helper routines - For C++-style output
 def iterativeStringFind(string, sub):
+    """
+    Helper routine used in converting SymPy output to C++ output. Interatvely search a string for a sub string
+    """
     from string import find
 
     res = []
@@ -93,14 +107,14 @@ def iterativeStringFind(string, sub):
     return res
 
 def convert_CPP(string):
-    '''
+    """
     Routine that takes the output from SymPy and converts it to CPP code. This is really taking x**y -> pow(x,y) in a whole load of complecating cases. It was an absolute bugger to code (seriously the worse code Ive had to produce), however it allows one to simply run the SymPy code with printType = CPP, and copy and paste the result directly into a C++ program (including weave implementation used here. You`re welcome.
 
     author: cajd
     Date:7Aug2015
 
     Has been verified to work for all combinations up to second derivative for Gaussian SB profile, for parameter set [e1,e2,size]
-    '''
+    """
     
     from string import replace, find
     import numpy as np
@@ -204,9 +218,10 @@ def convert_CPP(string):
 
 
 def operatorSearchRight(string, opSearch, index):
-    '''
+    """
+    Helper routine in converting SymPy output to C++ style output.
     Routine that starts from index entered, searches to right to the next operator, as defined in opSearch, and then places an extra `)` before that operator. Used to bracket pow functions to the right, accounting for the case were x**(some function) [parantheses important here]
-    '''
+    """
 
 
     j = -1; found = False
@@ -237,45 +252,28 @@ def operatorSearchRight(string, opSearch, index):
 
     return string
 
-    ''' Original
-        #Search forward form position
-        while i+j <= len(string)-2 and not found:
-            j += 1
-
-            if(string[i+j] == '('):
-                #Susped search until paranthesis closed
-                inParanthesis = True
-            if(inParanthesis):
-                if(string[i+j] == ')'):
-                    inParanthesis = False
-                continue
-            
-            match = np.array(opSearch == string[i+j])
-            
-            if(sum(match) == 1):
-                string = string[:i+j]+')'+string[i+j:]
-                subloc[ii+1:] = subloc[ii+1:] + np.ones(len(subloc[ii+1:]), dtype  = np.int)
-                #string[i+j] = ')'+ string[i+j]
-                found = True
-
-        if(not found):
-            #Close on end of string
-            string = string+')'
-            continue
-    '''
-
 
 ### Weave Declarations -- C++ Implementation ###
 
 def gaussian_SBProfile_Weave(xy, cen, isigma, ie1, ie2, iItot, der = []):
-    '''
+    """
     Routine that produces the SB profile and its derivatives using C++ code called through Weave inline.
 
     Note: As the code is compiled for the first run and then run from precompiled code, it may be the case that the code will be quickest when compiled in seperate routines
 
     The evaluation of the SB profile and its derivatives in the presence of a lensing field is involved using this method, therefore it has been neglected for now (The application of the method itself does not require lensing paramaters where the shear is taken as the average across a sample [e.g. ring test], however the simulation of sheared images may require this. In this case, only the lensed surface brightness profile itself is required, and this may be more easily implemented in the full matrix formalism of gaussian_SBProfile_Py in Python (numpy)
-    
-    '''
+
+    Required:
+    -- xy: Grid [x,y] over which SB profile is evaluated
+    -- cen: Centroid [x,y]
+    -- isigma: Size of SB profile
+    -- ie1, ie2: Ellipticity components of SB profile
+    -- iTOT: Total integrated flux, corresponding to amplitude of profile in Gaussian case.
+    ---der: Sets the parameters to be differentiated with respect to. The size of each sub-list sets the order of differentiation. e.g. to return SB profile, use der = [] (or leave at default. To get d2I/dr2: der = ['size', 'size'], an To get d2I/drde1: der = ['size', 'e1'] etc.
+
+    Returns:
+    --SB: surface brightness profile evaluated according to input parameters and derivative labels, on grid specified by xy.
+    """
     
     from scipy import weave
     import numpy as np
@@ -482,4 +480,19 @@ def runWeave_GaussSB_de1de2(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, co
 
 if __name__ == "__main__":
      ##Contains the routines if the code is run from command line, most likely to output SymPy result
-    gaussian_SBProfile_Sympy(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, der = ['e2', 'e1'], printOnly = True, printStyle = 'CPP')
+
+    import sys
+    nargs = len(sys.argv)
+    if(nargs >= 5):
+        isigma, ie1, ie2, iItot = sys.argv[1:5]
+    else:
+        isigma, ie1, ie2, iItot = 0.0, 0.0, 0.0, 0.0
+    if(nargs >= 6):
+        der = sys.argv[5:]
+    else:
+        der = ['e2', 'e2']
+
+    print 'Producing SB profile for Size, E1, E2, Flux:', isigma, ie1, ie2, iItot
+    print 'With derivative:', der
+    
+    gaussian_SBProfile_Sympy(0.0, 0.0, isigma, ie1, ie2, iItot, der = der, printOnly = True, printStyle = 'CPP')

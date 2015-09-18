@@ -9,8 +9,7 @@ import src.model_Production as modPro
 import src.surface_Brightness_Profiles as SBPro
 import sys
 
-Output = './Testing/'
-#'./ML_Output/SNRBias/28Aug2015/2D/e1_e2/xtol_minus5/NoLookup/Simplex/BiasCorrected/LowSNR/'
+Output = './ML_Output/SNRBias/28Aug2015/2D/e1_e2/xtol_minus5/NoLookup/Simplex/BiasCorrected/LowSNR/'
 #'./ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
 #'./ML_Output/SNRBias/9Jul2015/e1/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
 filePrefix = 'e10p3_e20p3'
@@ -26,6 +25,7 @@ if(len(sys.argv) >= 2):
 else:
     SNRRange = [150., 201., 50.] #Min, Max, Interval
 minimiseMethod = 'simplex'#'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
+errorType = 'Fisher'
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
 fittedParameters = dict(e1 = 0.3, e2 = 0.3)
@@ -209,7 +209,7 @@ def bias_bySNR():
                 bchandle.write('#'+str(k)+' = '+str(imageParams[k])+'\n')
             
 
-        MaxL = np.zeros((nRealisation, len(fitParamsLabels))); BCMaxL = np.zeros(MaxL.shape)
+        MaxL = np.zeros((nRealisation, len(fitParamsLabels))); BCMaxL = np.zeros(MaxL.shape); MaxLErr = np.zeros(MaxL.shape)
         for real in range(nRealisation):
             ## This version uses GALSIM default
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
@@ -225,10 +225,15 @@ def bias_bySNR():
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
             ##Find usign lookup table where appropriate
+            MLReturn = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, preSearchMethod = preSearchMethod, bruteRange = bruteRange, biasCorrect = biasCorrect, bcoutputHandle = bchandle, error = errorType, setParams = imageParams.copy(), **initialGuess)
             if(biasCorrect):
-                MaxL[real,:], BCMaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, preSearchMethod = preSearchMethod, bruteRange = bruteRange, biasCorrect = biasCorrect, bcoutputHandle = bchandle, setParams = imageParams.copy(), **initialGuess)
+                MaxL[real,:], BCMaxL[real,:] = MLReturn[0:2]
+                if(len(MLReturn) == 3): #Erro is output
+                    MaxLErr[real,:] = MLReturn[2]
             else:
-                MaxL[real,:] = ML.find_ML_Estimator(image, modelLookup = modelLookup, fitParams = fitParamsLabels,  outputHandle = handle, searchMethod = minimiseMethod, preSearchMethod = preSearchMethod, bruteRange = bruteRange, biasCorrect = biasCorrect, bcoutputhandle = bchandle, setParams = imageParams.copy(), **initialGuess)
+                MaxL[real,:] = MLReturn[0]
+                if(len(MLReturn) == 2):#Error is output
+                    MaxLErr[real,:] =  MLReturn[1]
 
             if(real > 10000 and real%1000 == 0 and percentError > 0.):
                 Mean = (MaxL[:real,:].mean(axis = 0)-fitParamsValues); Err = MaxL[:real,:].std(axis = 0)/np.sqrt(real)

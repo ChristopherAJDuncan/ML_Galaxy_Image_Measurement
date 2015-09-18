@@ -1,9 +1,10 @@
-'''
+"""
 Author: cajd
-Date: 29 May 2015
-Purpose: This module contains the routines to obtain the bias in ML value from theoretical considerations.
+Touch Date: 29 May 2015
+Purpose: This module contains the routines to obtain the bias in ML value from theoretical considerations. This can be done analytically where the derivatives of the likelihood and model with respect to model parameters are well understood (as with Gaussians), or numerically using finit derivatives.
 
-'''
+This module includes the Analytic first order bias for a Guassian likelihood and an elliptical Gaussian surface birghtness profile
+"""
 
 debug = False
 
@@ -14,8 +15,8 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     import src.model_Production as modPro
     import src.surface_Brightness_Profiles as SBPro
     from derivatives import finite_difference_derivative
-    '''
-    Returns the theoretically motivated ML estimator bias due to finite data sample. First instance only calculates the linear bias. This is only applicable to the case where the estimate is taken as the ML point of a Gaussian Likelihood function, or minimising chi^2, and where the noise variance is uniform across the stamp.
+    """
+    Returns the theoretically motivated ML estimator bias due to finite data sample (noise bias) to first order (by default). First instance only calculates the linear bias. This is only applicable to the case where the estimate is taken as the ML point of a Gaussian Likelihood function, or minimising chi^2, and where the noise variance is uniform across the stamp.
 
     This formalism removes the dependence on the derivative of the lnL on the image by using the simplifying statistics of the image and its noise properties: in the Gaussian case, and in the formalism of `return_numerical_ML_Bias`, K = -3J, <image - model> = 0 and <(image-model)^2> = noise_var
 
@@ -27,15 +28,16 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     Edit to include fully analytic derivative of the image
 
     Requires:
-    parameter_value: value of beta on which to calculate the bias (either intrinsic parameter value, or ML measurment itself): *must be singular in this case*
-    parameter_label: labels the parameter being varied. Must be of the form of the default model parameter dictionary.
-    imageParams: parameters which define the image. Parameters which are not being varied must be set to default values. `noise` must be accurate.
-    order: not implemented yet. Defines to what order the bias is returned. Default is first order.
+    -- parameter_value: value of beta on which to calculate the bias (either intrinsic parameter value, or ML measurment itself): *must be singular in this case*
+    -- parameter_label: labels the parameter being varied. Must be of the form of the default model parameter dictionary.
+    -- imageParams: parameters which define the image. Parameters which are not being varied must be set to default values. `noise` must be accurate.
+    -- order: ONLY FIRST ORDER IS SUPPORTED. Defines to what order the bias is returned. Default is first order.
+    -- diffType: Accepted values are `analytic` or `ana`, and `numerical` and `num` (case-insensitive). If the former, then anaylic (exact) derivatives are used for the model as defined in modPro.differentiate_Pixelised_Model_Analytic in model_Production.py. If the latter, then finite difference is used.
 
     Side Effects: None
     
     Returns: bias to stated order for all parameters entered, as 1D array.
-    '''
+    """
 
 
     pVal = parameter_value; pLab = parameter_label
@@ -44,16 +46,11 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
     iParams = deepcopy(imageParams)
 
     ##-- Get the derivatives of the pixelised, noise-free model
-    #diffIm = modPro.differentiate_Pixelised_Model_Numerical(imageParams, S0, derLabel, n = [1,2,3], interval = [0.001, 0.001])
     if diffType.lower() == 'numeric' or diffType.lower() == 'num':
-        ##Get fully numeric derivative. This takes the derivative of the image as a whole: therefore note that this is likely to be more problematic in ensuring that derivative has converged.
-        diffIm = finite_difference_derivative(modPro.get_Pixelised_Model_wrapFunction, pVal, args = [iParams, pLab, 1], n = [1,2], dx = [0.001, 0.001], order = 5, eps = 1.e-3, convergenceType = 'sum', maxEval = 100)
+        ##Get fully numeric derivative. This takes the derivative of the image as a whole: therefore note that this is likely to be more problematic in ensuring that derivative has converged. NOTE: 
+        diffIm = finite_difference_derivative(modPro.get_Pixelised_Model_wrapFunction, pVal, args = [iParams, pLab, 1, {'sbProfileFunc':SBPro.gaussian_SBProfile_Weave, 'noiseType':None, 'outputImage':False}], n = [1,2], dx = [0.001, 0.001], order = 5, eps = 1.e-3, convergenceType = 'sum', maxEval = 100)
     elif diffType.lower() == 'analytic' or diffType.lower() == 'ana':
         diffIm = [modPro.differentiate_Pixelised_Model_Analytic(iParams, pVal, pLab, 1, permute = True), modPro.differentiate_Pixelised_Model_Analytic(iParams, pVal, pLab, 2, permute = True)]
-
-        #This version verified to work for singel parameter case. Alternate version using function call implemented above: if found to agree, then remove this version
-        ## Get fully analytic derivative
-        #diffIm2 = [modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab[0]]), modPro.get_Pixelised_Model_wrapFunction(pVal, iParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [pLab[0], pLab[0]])]
     else:
         raise RuntimeError('analytic_GaussianLikelihood_Bias - Invalid differential type (diffType) entered:'+diffType)
 
@@ -95,15 +92,17 @@ def analytic_GaussianLikelihood_Bias(parameter_value, parameter_label, imagePara
 
 
 def bias_components(parameter_derivatives, noise):
-    '''
-    Returns the components needed to calculate the parameter bias (normally I, J, K in our notation)
+    """
+    Returns the components needed to calculate the parameter bias (normally I <2D ndarray>[nPar,nPar], J <3D ndarray>, K <3D ndarray> in our notation, and also in Wikipedia defintition)
     Uses the fact that the likelihood is Gaussian, and therefore noise properties of the image are known, and multiple realisations are not needed to calculate a mean.
 
     Requires:
     -- parameter_derivatives: 2-element list, where [0] contains a list of the first derivatives of the pixelised image across all parameters, and [1] contains the array of all permutations of second order derivatives of the pixelised image over all input parameters.
-    -- noise: **Standard Deviation** of the noise on each pixel, assumed Gaussian around zero
-    
-    '''
+    -- noise: **Standard Deviation** of the noise on each pixel, assumed Gaussian around the underlying SB Profile.
+
+    Further Work:
+    -- Uses three-nested-loop. Investigation into how it could be made quicker (e.g. C++ background, or intelligent restructuring)
+    """
 
     nPar = len(parameter_derivatives[0])
 
@@ -135,26 +134,22 @@ def bias_components(parameter_derivatives, noise):
 
 def return_numerical_ML_Bias(parameter_value, parameter_label, imageParams, order = 1, maxEval = 1000):
     import model_Production as modPro
-    '''
+    """
     Returns the theoretically motivated ML estiamtor bias due to finite data sample. First instance only calculates the linear bias. This is most useful for a `brute force` approach to the ML bias correction, as (in the Gaussian case) the result depends on the image: therefore K, J and L must be calculated over many samples; therefore, this is likely to be computationally expensive compared to the analytic method where the statistics of the image are known.
 
-    To Do:
-    Edit so that setParams decrsibes the image, and allow user to define the maximum number (or tolerance) of iterations to get mean values.
-
-    Known Problems:
-    -- GALSIM noise parameter is varying with run (around the third run)
+    Differs from the analytic case in the sense that *this method does nto assume that the statistics of the image are known*, so that one must consider many simulated images to obtain the bias components
 
     Requires:
     parameter_value: value of beta on which to calculate the bias (either intrinsic parameter value, or ML measurment itself)
     parameter_label: labels the parameter being varied. Must be of the form of the default model parameter dictionary.
     image: 2-dimensional ndarray containing the image to be analysed
-    setParams: model parameters set to the default value.
+    imageParams: model parameters set to the default value.
     order: not implemented yet. Defines to what order the bias is returned. Default is first order.
 
     Side Effects: None
     
     Returns: bias to stated order.
-    '''
+    """
     from image_measurement_ML import get_logLikelihood
     from derivatives import finite_difference_derivative
 
@@ -170,10 +165,12 @@ def return_numerical_ML_Bias(parameter_value, parameter_label, imageParams, orde
     K = np.zeros(maxEval); J = np.zeros(maxEval); I = np.zeros(maxEval);
 
     for ev in range(maxEval):
+        ## Get a new simulated image
         image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', Verbose = debug)
 
         ## Store imageParams in temporary storage to ensure that dictionary in not overwritten
         iParams = deepcopy(imageParams)
+        ## Take derivative of likelihood (function of image and model at entered parameter values) around the ML point (entered parameter values)
         dpixlnL = finite_difference_derivative(get_logLikelihood, pVal, args = [pLab, image, iParams, 'pix'], n = [1,2,3], dx = [0.0001, 0.0001], maxEval = 1000, eps = 1.e-3)
 
         K[ev] = dpixlnL[2].sum()/nPix

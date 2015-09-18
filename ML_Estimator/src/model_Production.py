@@ -1,9 +1,11 @@
-'''
-Module that contains the general routines for production of the pixelised (and potnetially noisy) surface brightness models and its derivatives
+"""
+Module that contains the general routines for production of the pixelised (and potentially noisy) surface brightness models and its derivatives. Includes routines to utilise GALSIM, however testing confirms that this does not behave well in producing derivatives, as well as a `user-defined` pixelised model production routine that performs the convolutions natively. Testing confirms that the latter is well behaved and produced sensible results.
+
+NOTE: This routine sets up the default model parameters as well as the means to produce the model images. It does this using individual subroutines ad function, showever this is a situation ripe for the use of a defined class. This is left to future work if desired.
 
 Author: cajd
 Touch Date: 28 May 2015
-'''
+"""
 import numpy as np
 from copy import deepcopy
 
@@ -11,27 +13,36 @@ debug = False
 
 ##--------------Model Dictionary Manipulation------------------------##
 
-'''
-To Do:
-Make class?
-Edit ``setters`` and ``getters`` to ensure that disctionary is of the correct form, with no duplication of keys at different levels
-'''
-
 def default_ModelParameter_Dictionary(**setters):
-    '''
-    Returns the default parameters used in setting up the model image. Dictionary keyword-value pairs can be passed in to overwrite defaults
+    """
+    Returns the default parameter dictionary used in setting up the model image. Dictionary keyword-value pairs can be passed in individually to overwrite defaults. This is essentially a *setter*.
 
-    To Do:
-    Place SB Profile Parameters into a sub-dictionary, thus treated in the same way as the PSF parameters?
+    Model Parameters:
+    -- centroid
+    -- noise
+    -- SNR
+    -- stamp_size
+    -- pixel_scale: Used in GALSIM implementation, assumed to be one in user implementation (where everything is done in pixels)
     
-    PSF:
-    -- Type: Corresponds to the PSF model used in producing the image
-    ---- 0: No PSF
-    ---- `Gaussian` or 1: Gaussian
+    --PSF Dictionary (PSF):
+    --- PSF_Type: Corresponds to the PSF model used in producing the image
+    ____ 0: No PSF
+    ____ `Gaussian` or 1: Gaussian
+    --- PSF_size
+    --- PSF_Gauss_e1
+    --- PSF_Gauss_e2
 
-    -- Parameters:: parameters which defines the PSF, according to input model
-    ---- Gaussian: Gauss_Size, Gauss_e1, Gauss_e2 as defined in SB_Profile_Gaussian
-    '''
+    -- Surface Brightness Profile Dictionary (SB):
+    --- modelType: (case insensitive)
+    ___ 'Gaussian'
+    --- size
+    --- e1
+    --- e2
+    --- flux
+    LENSING PARAMETERS (IGNORED IN THIS ITERATION)
+    --- magnification
+    --- shear
+    """
 
     ### PSF Declaration
     PSFDict = dict(PSF_Type = 0, PSF_size = 2., PSF_Gauss_e1 = 0.7, PSF_Gauss_e2 = 0.0)
@@ -47,22 +58,13 @@ def default_ModelParameter_Dictionary(**setters):
 
     update_Dictionary(dct, setters)
 
-    '''
-    ## Use this to set all parameters not contained in a subdirectory
-    for kw in setters.keys():
-        if kw not in dct:
-            print 'find_ML_Estimator - Initial Parameter Keyword:', kw, ' not recognised'
-        else:
-            dct[kw] = setters[kw]
-    '''
-
     return dct
 
 def unpack_Dictionary(dict, requested_keys = None):
     from generalManipulation import makeIterableList
-    '''
-    Returns a list of dictionary values corresponding to the list of requested keys input. If no keys are input, the full list of values corresponding to the full dictionary keys list (in stored order) is returned
-    '''
+    """
+    Helper routine which returns a list of dictionary values corresponding to the list of requested keys input. If no keys are input, the full list of values corresponding to the full dictionary keys list (in stored order) is returned. Used to extract model parameters. Automatically searchs all sub-directory levels defined (hardwired to SB and PSF only)
+    """
 
 
     if(requested_keys is None):
@@ -70,8 +72,6 @@ def unpack_Dictionary(dict, requested_keys = None):
         requested_keys = dict.keys() ##Make so is iterable (i.e. sperates PSF and SB keys)
     elif(not hasattr(requested_keys, "__iter")):
         requested_keys = makeIterableList(requested_keys)
-        ##If a single string is passed in (i.e. not a list), make it into a list
-        #requested_keys = requested_keys#[requested_keys] !_EDITED IN RUSH
 
     ## Set SB Keys
     rescount = 0; res = ['F']*len(requested_keys)
@@ -87,9 +87,9 @@ def unpack_Dictionary(dict, requested_keys = None):
 
 
 def update_Dictionary(d, u):
-    '''
-    Recurively updates a dictionary and all subdictionaries. Taken from StackExchange
-    '''
+    """
+    Recurively updates a dictionary (d) and all subdictionaries with input dictionary (u). Taken from StackExchange
+    """
     import collections
     for k, v in u.iteritems():
         if isinstance(v, collections.Mapping):
@@ -102,10 +102,15 @@ def update_Dictionary(d, u):
 
 def seperate_Keys_byModel(der, vals = None, refParam = None):
     from copy import deepcopy
-    '''
-    Takes as input a list which contains the labels of all the parameters considered, and seperates into two lists corresponding to SurfaceBrightness, and PSF models
-    Ignores *others* for now (not PSF or SB)
-    '''
+    """
+    Takes as input a list which contains the labels of all the parameters considered, and seperates into two lists corresponding to SurfaceBrightness (SB), and PSF models (PSF)
+    Ignores *others* for now (anything not PSF or SB)
+
+    Requires:
+    -- der: list of parameter labels beign queried
+    -- vals: optional (default None): Values for the parameters being queried. If not None, these are similarly split into lists corresponding to SB and PSF. Output is then SBPar, PSFPar, SBVal, PSFVal where each list contains identified parameters
+    -- refParam: optional (default None) Reference dictionary used to identify the parameters (i.e. parameters in der checked against this dictionary). If None, default dictionary is used.
+    """
 
     if(refParam is None):
         ##Use default dictionary
@@ -150,9 +155,14 @@ def seperate_Keys_byModel(der, vals = None, refParam = None):
 def set_modelParameter(Dict, param_labels, param_values):
     from copy import deepcopy
     from generalManipulation import isIterableList, makeIterableList
-    '''
-    Sets model Parameters (as defined above) by input lists. As ooposed to update_Dictionary, this routine allows for the keys to be put in without defining which sub-dictionary they belong to, as seperate_Keys_byModel seperates out into sub-dictionaries specified in the default declaration
-    '''
+    """
+    Sets model Parameters (as defined above) by input lists. As opposed to update_Dictionary, this routine allows for the keys to be put in without defining which sub-dictionary they belong to, as seperate_Keys_byModel seperates out into sub-dictionaries specified in the default declaration
+
+    Requires:
+    --Dict: model Parameter dictionary to be modified
+    -- param_labels: list of parameter labels to be modified in Dict
+    -- param_values: list of values corresponding to parameters in param_labels.
+    """
 
     if(not (isIterableList(param_labels) == isIterableList(param_values))):
         raise ValueError('set_modelParameter - Both  param_labels, param_values must be lists or scalar')
@@ -173,22 +183,19 @@ def set_modelParameter(Dict, param_labels, param_values):
 ##-------------------------Model Production-----------------------------------------##
 def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs):
     from copy import deepcopy
-    '''
-    ##Wrapper function for get Pixelised model, which returns the image according to Params, where parameter with key 'xKey' is set to value 'x'
+    """
+    Wrapper function for get Pixelised model, which returns the image according to Params, where parameter with key 'xKey' is set to value 'x'. By default uses the native pixelised model image production routine.
 
     Requires:
-    --x:
-    --Params:
-    --xKey:
-    --returnOrder:
+    --x: Values to be set in dictionary Params
+    --Params: model dictionary used to specify model image to be produced
+    --xKey: label, or list of labels, corresponding to values in x, to be modified in Params. Must be defined as in default dictionary.
+    --returnOrder: if == 1, only the porduced image is returned (default). If == 2, both the image and modified parameter dictionary returned.
 
     Returns:
-    model image (always), altered model Params (if returnOrder /= 1)
+    -- model image (always), altered model Params (if returnOrder /= 1)
 
-    Side Effects: None
-
-    To Do: Edit so that an x value does not need to be passed
-    '''
+    """
 
     ##Store params value so that original is not overwritten - should this be the case?
     #iParams = Params.copy() ## DEPRECATED FOR NOW as it makes sense that we would want to overwrite this
@@ -225,9 +232,9 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
 
 
 def SNR_Mapping(model, var = None, SNR = None):
-    '''
-    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition. Model passed in should be noise-free.
-    '''
+    """
+    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition. Model passed in should be noise-free. If SNR is passed, std of pixel noise is returned. If var is passed (must be variance of pixel noise), SNR is returned. One but not both must be passed.
+    """
     if(var is None and SNR is not None):
         return np.sqrt(np.power(model,2.).sum()/(SNR*SNR))
     elif(SNR is None and var is not None):
@@ -238,18 +245,28 @@ def SNR_Mapping(model, var = None, SNR = None):
 ### ---------------------------------------------------------------- Model Production - Lookup Table --------------------------------------------------------------------------------------------------------- ###
 
 def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
-    ''' Create a lookup table for the model creation - Useful only for the 1D or 2D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] '''
-    '''
+    """
+    Create a lookup table for the model creation - Useful only for the 1D or 2D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] 
+
     Requires:
     --- setParams - dictionary containign the default value for all other model parameters
     --- pLabel - string labelling the parameter being fit (that which the lookup grid is evaluated
     --- pRange - the range over which the model is evaluated
     --- dP - the step size of the evaluation
+    --- modelFuncArgs: input dictionary of arguements required of the model image production routine.
 
-    Edited on 20th Jul to enable its use in the 2D case.
+    Returns:
+    --- lookup dictionary: Dictionary containing details of the lookup table. Includes:
+    ___useLookup: Default True. If true, use the information contained in the lookup construct
+    ___Grid: list of grid arrays specifying the parameter values on which the lookup was constructed
+    ___Images: [[nGrid]*nPar, [nPix, nPix]] <ndarray> the constructed model images evaluated over set parameter grid
+    ___width: list of widths over which parameter grids are constructed (corresponding to image)
+    ___nP: number of free parameters over which the lookup is constructed
+    ___interp: Sets whether index matching or linear interpolation is used in returning model. Interpolation is only implemented for nP = 1.
 
     Note: If one cares, this and return Model lookup could be defined in a class.
-    '''
+    -- Code is not set up to use models outside the range specified by the lookup table
+    """
 
     print '\n Constructing Model Lookup Table \n'
 
@@ -297,15 +314,13 @@ def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
 
 
 def return_Model_Lookup(lookup, P):
-    '''
-    Returns the lookup integer corresponding to parameter value P.
-
-    Defined here for 1D case only.
+    """
+    Returns the lookup model image and integer index corresponding to parameter values P.
 
     Requires:
     -- lookup: Dictionary defined as in get_Model_Lookup
     -- P <single element list/array>: parameter lookup value
-    '''
+    """
 
     ##
     if(lookup['interp'] is None):
@@ -347,17 +362,28 @@ def return_Model_Lookup(lookup, P):
 
 
 def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, der = None, **sbFuncArgs):
-    '''
-    Author constructed method of image construction using a pixel response function (10Jul2015)
+    """
+    Native method of image construction using a pixel response function and PSF model, for specified surface brightness profile (10Jul2015)
 
     Tests:
-    First-order analytic bias on e1 = 0.3 agrees well with A Halls version. Comparison of image and up to second order derivatives comapre to < 10% with matched A. Hall version.
+    First-order analytic bias on e1 = 0.3 agrees well with A Halls version. Comparison of image and up to second order derivatives compare to < 10% with matched A. Hall version.
 
-    Returns a pixelised image set according to Params and using sbProfileFunc.
+    Returns a pixelised image set according to Params and using sbProfileFunc. Use of der allows one to specify whether to return derivatives. Uses an enlargementFactor and fineGridFactor to deal with cases where the PS is smaller than the support of the SB profile, and sub-pixel variations.
 
-    To Do:
-    -- Add noise sampling to allow use as image production on simulations.
-    '''
+    Requires:
+    --- Params: dictionary specifying model.
+    --- inputImage: image input. If none, image is produced according to Params. Allows one to input a noise free image and add noise on the fly without re-evaluating (e.g. in using multiple noise realisations in sims.
+    --- Verbose: If true, more is output to screen. Useful for debugging.
+    --- noiseType: Specifies noise model. In none, no noise is added to image. Accepted values:
+    ___ `Gaussian`
+    --- outputImage: IGNORED.
+    --- sbProfileFunc: link to function which specifies the SB profile
+    --- der: List of parameters specifying the derivative wrt which the image is produced. Length of der sets the order of the derivative, and each element specifies parameter: e.g. [size, e1] gives d^2(SB)/(dTde1). Derivatives are taken around values specified in Params. Only analytic derivative are coded up at this stage.
+    -- sbFuncArgs: Dictionary of argements not specifed otherwise which can be passed to the SB profile function.
+
+    Returns:
+    image, iParams: Pixelised model image as [nPix, nPix] array, as defined by input, and dictionary of model parameters including any modifications (e.g. update to noise etc).
+    """
 
     import copy
     iParams = copy.deepcopy(Params)
@@ -509,7 +535,8 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     import time
     import math
     import os
-    '''
+    """
+    DEPRECATED GALSIM VERSION. The user is advise to take care if using this version, as development has not considered this method of production for the majority of the development cycle.
     Routine to return as 2D numpy array the model which will be fitted against the image
 
     1st incarnation ignores the PSF, but sets up an elliptical Gaussian, defined as a Gaussian with an applied ellipticty defined in Params
@@ -534,7 +561,7 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     **WARNING**
     It is known that the GALSIM routine defined here produces a Gaussian SB profile which is different than the user-defined models otherwise used. Also, where the SB prfile function is passed in, large differences may also be observed where GALSIM is allowed to draw and pixelate, compared to user (cajd) defined pixelation routines. Care must therefore be taken when comparing these routines.
     
-    '''
+    """
     import galsim
 
     ##Set up copy of Params to avoid overwriting input. As the copy is output, the original can be overwritten by self-referencing on runtime
@@ -684,7 +711,7 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
 def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute = False):
     import surface_Brightness_Profiles as SBPro
     from generalManipulation import makeIterableList
-    '''
+    """
     Wrapper function to produce an analytic derivatve of the pixelised image, by using the fact that the model production routines can be called defining the surface brightness profile routine, and the arguments that are passed into it.
 
     Surface Brightness Profiles: An alterantive SB profile implementation can be provided by using sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, however the Weave implementation uses the output of the Sympy routine in C++ through weave (SciPy), is noticably faster, and has been tested to be exact to the default float precision in python. 
@@ -697,7 +724,10 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
     -- permute: If false, single derivative is output for each order entered. If true, the result is returned in an nParamter^order list covering all permutations of the derivatives, where symmetry is enforced. In this case, the diagonal elements cover the nth derivatve with respect to that parameter. Result is on order of that the parameters are entered. E.g. for parameters a and b entered in that order:
     --- Res = [ ddI/dada, ddI/dadb
                 ddI/dbda, ddI/dbdb ]
-    '''
+
+    Returns:
+    Array containing derivatives over entered parameters, and all permutations (if permute == True)
+    """
 
     if( n<1 or n>2 ):
         raise ValueError('differentiate_Pixelised_Model_Analytic - Error - Only derivatives up to second order are supported for now')
@@ -739,29 +769,25 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
 
 def differentiate_Pixelised_Model_Numerical(modelParams, pVal, pLab, n = [1], order = 3, interval = 0.1, eps = 1.e-3, maxEval = 100):
     from derivatives import finite_difference_derivative
-    '''
+    """
     28/5/15
     Numerically differentiates pixelised model with respect to a given parameter. The model must be produced by a routine which returns a gridded (and/or pixelised) image, and must be accessible using a function of form f(x, *args), where x sets the value of the parameter being differentiated wrt, and args allows this value to be correctly labelled in the input model parameter dictionary. These functions are hard coded in this original version, but may be generalised to a user defined  function in future versions.
 
     This is useful for the numerical evaluation of ML bias.
 
     Requires:
+    --modelParams: Dictionary of model parameters
+    -- pVal: Value of free parameters defining point at which derivative is set
+    -- pLab: String labels of model parameters corresponding to pVal
+    -- n: Order to which derivative is returned
+    --- order: number of function evaluations used to evaluate derivative (named to mimic SciPy definition)
+    --- interval: step size used in finite difference method. As defined in finite_difference_derivative()
+    --- eps: Tolerance for convergence.  As defined in finite_difference_derivative()
+    --- maxEval: Maximum number of derivative evaluations (and step-size intervals) considered in testing for convergence.
 
+    """
 
-    Side Effects:
-
-    '''
-
-    print 'n at modPro level:', n
     result = finite_difference_derivative(get_Pixelised_Model_wrapFunction, pVal, args = [modelParams, pLab, 1], n = n, order = order, dx = interval, eps = eps, convergenceType = 'sum', maxEval = maxEval)
-
-    '''
-    result = np.zeros(len(n))
-    for nn in range(len(n)):
-        ##Get derivative 
-        df = der(get_Pixelised_Model_wrapFunction, dVal, n = n[nn], order = order, dx = interval, args = [modelParams, dLab, 1])
-
-    '''
 
     return result
 
@@ -769,7 +795,8 @@ def differentiate_Pixelised_Model_Numerical(modelParams, pVal, pLab, n = [1], or
 
 def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
     from math import pi
-    '''
+    """
+    DEPRECATED in favor if SymPy or Weave (C++) defintions. Kept as easier to understand form of profile in comparison to those.
     Returns elliptical Gaussian surface brightness profile on a user-specified 2D Grid (xy), which is a 2-element tuple, with each element a 1D <ndarray>, in order [x,y]
 
     Requires:
@@ -782,7 +809,7 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
 
     NOTE: If the Postage Stamp is too small (set by xy), then some of the profile will fall outside the PS and in this case integrate(gaussian_SBProfile) != flux.
     
-    '''
+    """
 
     #delR = np.absolute([xy[0]-cen[0], xy[1]-cen[1]]) #[delX, delY]
     delR = [xy[0]-cen[0], xy[1]-cen[1]] #[delX, delY]

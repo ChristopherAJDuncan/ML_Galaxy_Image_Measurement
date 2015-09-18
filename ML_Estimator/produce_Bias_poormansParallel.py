@@ -3,7 +3,7 @@ import numpy as np
 import os
 import time
 
-SNRRange = [150., 201., 25.]
+SNRRange = [20., 36., 5.]
 ##This manually needs changed in both routines
 outputDirectory = './ML_Output/SNRBias/28Aug2015/2D/e1_e2/xtol_minus5/NoLookup/Simplex/BiasCorrected/LowSNR/'
 

@@ -1,19 +1,17 @@
-'''
-Library routine which calculates nth order derivatives over a scalar function, or a scalar function on a grid.
-
-This is essentially a (fairly poor) extension to the scipy default, which only works on scalar values
+"""
+Library module which calculates nth order derivatives over a scalar function, or a scalar function on a grid. 
 
 Author: cajd
-'''
+"""
 
 def finite_difference_derivative(fun, x0, args, n = [1], order = 5, dx = 1., maxEval = 100, eps = 1.e-4, convergenceType = 'sum'):
     '''
     Compute numerical derivatives using finite differences.
 
     Requires:
-    -- fun: symbolic link to function to be differentiated. Function must take arguements of the form (x, *args), where an element of the args tuple can defined which variable is being differentiated.
+    -- fun: symbolic link to function to be differentiated. Function must take arguments of the form (x, *args), where an element of the args tuple can defined which variable is being differentiated.
     -- x0: The central point around which the derivative is being taken.
-    -- args: tuple containing the arguements required by the function which is being differentiated, beyond the variable being passed as x (the one being differentiated). Where multiple varables are differentiable, args shold contain a reference labelling the variable which is being differentiated wrt.
+    -- args: tuple containing the arguements required by the function which is being differentiated, beyond the variable being passed as x (the one being differentiated). Where multiple variables are differentiable, args should contain a reference labelling the variable which is being differentiated wrt.
     -- n: tuple or integer detailing the order of differentiation (1: 1st derivative etc). Result is output as a tuple containing the same number of elements as n is input.
     -- order: the number fo finte intervals used to calculate the derivative.
     -- dx: The interval width to use
@@ -22,7 +20,7 @@ def finite_difference_derivative(fun, x0, args, n = [1], order = 5, dx = 1., max
     -- convergenceType:  determines how the convergnece test is applied. If == sum, convergence test is applied to the sum over all pixels. If == pix, convergenceTest carried out on all pixels individually.
 
     Returns:
-    -- result: Tuple contining the derivative of the function to order as set by `n` input.
+    -- result: Tuple containing the derivative of the function to order as set by `n` input.
     '''
     
     import numpy as np
@@ -34,6 +32,7 @@ def finite_difference_derivative(fun, x0, args, n = [1], order = 5, dx = 1., max
     ##Evaluate once if width is passed in and is scalar
     if dx <= 0:
         raise ValueError('finite_difference_derivative - dx Entered is not valid (negative)')
+    ## Edit dx to the form required by the routine: i.e. a tuple whose first element is the spacing, and the second is the change in dx which is used for convergence test. Where a scalar dx is input, the second element is set to zero so that a convergence test is not undertaken
     if(not hasattr(dx, "__iter__")):
         maxEval = 1
         dx = [dx, 0.]
