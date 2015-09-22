@@ -1,3 +1,5 @@
+Author:: cajd (Christopher Duncan, c.a.j.duncan[{at}]gmail.com)
+
 This is the readme for the Maximum Likelihood fit optimal bias corrected shape/size estimator for application to galaxy images. The most common application of this program is the measurement of surface birghtness profile parameters assuming an underlying model profile: this can be done with the application of find_ML_Estimator() in image_measurement_ML.py, which also acts as a wrapper to the implementation fo further additional routines such as error estimation and noise bias correction. Other functionality includes the evaluation of the analytic noise bias using routines in measure_Bias.py, and image production (with Gaussian noise) in model_Production.py.
 
 
@@ -35,7 +37,7 @@ This method returns:
 [ML, Error]
 where:
 ML is [nPar] list of maximum likelihood values for parameters entered in fitParams
-Error is [nPar] list of parameter uncertainties, estiamted from the default method.
+Error is [nPar] list of parameter uncertainties, estimated from the default method.
 
 
 
@@ -62,7 +64,9 @@ Error is [nPar] list of parameter uncertainties, estimated from the default meth
 
 NOTE ON MINIMISATION METHODS
 
+The code allows for a number of different minimisation methods to be used, and these have been tested to various extents. The most accurate has been shown to be the simplex method after a course grid search. Powell works well even if the initial guess was significantly different to the true value, but some residual bias was observed. Derivative methods such as cg of bfgs will find an accurate minimum, but are not quicker than simplex method for the 2-Parameter case. Further tests in the form of residual bias is needed for these methods.
 
+In the gFit paper (http://arxiv.org/abs/1211.4847), the authors conclude that a cyclic coordinate descent (CCD) algorithm is the most accurate, but not necessarily the quickest. The gFit routine thus allows the use of CCD, LVM and MCMC. None of these are coded up in this version, however one can note that LVM is present in scipy as `leastsq', and there are excellent MCMC pre-fabs for python (e.g. emcee). The use of any of these methods are excellent possible extensions.
 
 ADDITIONAL DUMMY VARIABLES
 
@@ -114,6 +118,59 @@ Return: as above.
 
 ---------------------- Model Image Production -------------------------------------------------------------------------------
 
+The source module `model_Production.py' contains the routines to produce the PSF-convolved, pixelised surface brightness profile used to fit to the image in find_ML_Estimator(). As such, many of the routine in this module are particularly important in the application of the result, however provided the model parameter dictionary is well-defined in the use of find_ML_Estimator, most of the work is done by these modules in the background.
+
+As well as producing model images for the parameter fit, the routines can be used to produce noisy- or noise-free images. This can be acheived by two methods: The first is a `user-defined' method (that is, a method authored by cajd), which considers explicity the convolution of the underlying profile with the PSF and pixel-response-function using FFT, and GALSIM. In all applications including ML finding and analytic noise bias calcualtion, the former is used, and development has focussed on the use of that method. The use of GALSIM is therefore strongly discouraged, and the user is encouraged to take extra care whe using the GALSIM routines. GALSIM routines are known to give bad answers when derivatives of the SB profile are required.
+
+
+MODEL PARAMETER DICTIONARY:
+
+The model parameter dictionary used at all levels should follow the structure set out in
+default_ModelParameter_Dictionary(**setters)
+which corresponds to a constructor for the parameter data structure. When used, the free dictionary **setters can be used to override individual parameter values from their default value. Where parameters are contained witin a sub-dictionary, (e.g. the PSF or SB parameters), the code should take this into account provided they are given unique identifier labels. The return is a dictionary structure.
+
+MODEL PRODUCTION:
+
+
+--- user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseType = None, outputImage = False, sbProfileFunc = None, der = None, **sbFuncArgs)::
+User defined pixelised model image production routine. Minimum input is model params and sbProfileFunc: In this case the image is noise free and is not the derivative.
+
+sbProfileFunc must link to a function that returns the surface brightness profile across an xy grid, with call-sign sbProfileFunc(xy, cen,size,e1,e2,flux, der = ****, **sbFuncArgs), where cen ins the center of the model, and size, e1, e2 define the shape and size of the model image SB profile. In default this is not set, leading to an error, but all applications link the the C++ version of the Guassian SB profile in surface_Brightness_Profiles.py
+
+noiseType supports `Gaussian` or `gaussian`, or None. If None (default), noise-free image is produced. If gaussian, gaussian noise is added by sampling from distribution with mean zero and std given in model params `noise'.
+
+der is a list of parameter labels which specifies whether the returned image is the derivative. E.g. if der = [e1, e1, size] then the returend image is d^3(Im)/(de1 de2 dT).
+
+--- get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
+Wrapper routine for the above method, where the parameters labelled by xKey can be set to values x in the model parameter dictionary Params before call.
+
+OTHER:
+
+SNR_Mapping(model, var = None, SNR = None):: returns the pixel std (if SNR is entered) or SNR (if pixel variance is entered) for the model image `model', according to the filter-matched defintition used in GREAT08.
+
+get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):: Create an instance of model image lookup table.
+
+return_Model_Lookup(lookup, P):: return the model lookup image for parameter values P (<list>). Return is the index of the parameter value in the lookup grid, and the model image itself.
+
+__________________Development Considerations________________________________________________________________________________
+
+EDITING DEFAULT MODEL PARAMETERS
+
+The default model parameter dictionary is defined using sub-dictionaries SB and PSF for clarity. The helper routines such as set_Model_Parameter() account for such a subdivision, but in doing so the compare to a default model dictionary to identify parameters that can be edited without needing to refer the toe sub dictionary. E.g. as long as size is a unique label for the SB profile size, the size = 0.3 can be entered and the code will automatically identify that it belongs to sub-dictionary SB.
+
+When adding/editing parameters, it is therefore important that **all parameters are uniquely labelled, irrespective of waht sub directory they exist in.** Also, seperate_Keys_byModel() should do the subdirectory seperation, but take care when editing to ensure that it behaves as expected. In particualr, if you add a new subdirectory, this routine will need edited to account for this.
+
+CODING THE SB PROFILE
+
+The background code which produces the SB profile should be done in C++ to limit runtime, and is implemented using Weave. To add a new SB profile, one must code in the derivative in C++ style as done in e.g. runWeave_GaussSB_de2dT. This must also be done and linked from the wrapper routine for each derivative combination condidered.
+
+Running surface_Brightness_Profiles.py on terminal with arguements will allow for the C++ form of the SB profile to be output using SymPy symbolic maths. The arguements are then: size, e1, e2, flux, [der]. The output can then be coded up following the previoous examples e.g. runWeave_GaussSB_de2dT. 
+
+This has been done for a Gaussian SB profile. For other profiles, gaussian_SBProfile_Sympy() can be altered to output derivatives, and the method used in gaussian_SBProfile_Sympy() should be follwed as an example.
+
+CODING THE PSF
+
+As the SB profile, the background is done in C++, and the first version contains the code for a Gaussian PSF model using the C++ version of the SB profile. An edit to other profiles requires an edit much like that described in `CODING THE SB PROFILE'
 
 __________Background and Assumptions_________________________________________________________________________________________
 
@@ -134,6 +191,17 @@ b_s = \frac{1}{n}(F^{-1})^{si}(F^{-1})^{jk}[0.5*K_{ijk} + J_{ijk}]
 
 This is the form used in the analytic_GaussianLikelihood_Bias() routine, and the correction in find_ML_Estimator.
 
+
+__________Possible Extensions________________________________________________________________________________________________
+
+image_measurement_ML.py::
+
+-- PRIOR ADDITION
+Addition of a prior requires only edits to:
+image_measurement_ML.py:: Addition of prior data structure construction routines
+find_ML_Estimator():: Accept and pass prior
+get_logLikelhood():: Accept prior. lnL -> lnPr + lnL
+measure_Bias.py:: analytic_GaussianLikelihood_Bias():: lnL,i -> lnPr,i + lnL,i, and extend to full formalism.
 
 __________Source Files________________________________________________________________________________________________________
 
