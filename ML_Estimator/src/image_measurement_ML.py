@@ -95,7 +95,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     return np.sqrt(np.diag(Fin))
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'Powell', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, bcoutputHandle = None, error = 'Fisher', **iParams):
+def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, noiseCalc = None, bcoutputHandle = None, error = 'Fisher', **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
     from surface_Brightness_Profiles import gaussian_SBProfile_Weave
@@ -115,7 +115,7 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     -- preSearchMethod: String detailing initial search over parameter space to find global Minimium, used as an initial guess for refinement with searchMethod. If None, initial guess is set to default passed in by the combination of setParams and iParams. If not None, then code will run an initial, coarse search over the parameter space to attempt to find the global mimima. By default this is switched off. Where preSearchMethod == grid or brute, the a grid based search is used. Where this is used, a range must either be entered by the user through bruteRange, or it is taken from the entered prior information. NOTE: This still uses a typically coarse grid, therefore if the range is too wide then it is possible that the code may still find a local mimimum if this exists within one grid point interval of the global miminum.
     -- Prior: NOT USED YET. Skeleton to allow for a parameter prior structure to be passed in
     -- bruteRange: [nPar, 2] sized tuple setting the range in which the initial preSearchMethod is evaluated, if this is done using a grid or brute method (both equivalent), where nPar is the number of free model parameters being fit. THIS DOES NOT CONSTITUTE A PRIOR, as the refinement may still find an ML value outside this range, however where the global maximum occurs outside this range the returned ML value may be expected to be biased.
-    -- biasCorrect: integer, states what level of noise bias to correct the estimate to. Only 1st order correction (biasCorrect == 1) is supported. If biasCorrect == 0, the uncorrected estimate (and error if applicable) are output. If biasCorrect > 0, the uncorrected, corrected and error (if applicable) are output.
+    -- biasCorrect: integer, states what level of noise bias to correct the estimate to. Only 1st order correction (biasCorrect == 1) is supported. If biasCorrect == 0, the uncorrected estimate (and error if applicable) are output. If biasCorrect > 0, the uncorrected, corrected and error (if applicable) are output. When used, it is important that *the entered model parameter dictionary contains an accurate measure of the pixel noise of appropriate signal--to--noise, as the analytic bias scales according to both*. Noise can be estimate using estimate_Noise() before entry.
     -- bcOutputhandle: As outputHandle, except for the bias corrected estimator.
     -- error: String detailing error estiamte to output. Supported values are:
     ___ fisher: Marginalised fisher error for each parameter around the ML point. See docstring for fisher_Error_ML().
@@ -144,14 +144,6 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
     ## Exceptions based on input objects
     if(image is None or sum(image.shape) == 0):
         raise RuntimeError('find_ML_Estimator - image supplied is None or uninitialised')
-
-    ## Set up analysis based on input values
-    if(fitParams is None):
-        print 'find_ML_Estimator - parameters to be fit (/measured) must be specified - using default:'
-        fitParams = ['size', 'e1', 'e2']
-        print fitParams
-        print ' '
-
         
     if(len(fitParams) > 2 and modelLookup is not None and modelLookup['useLookup']):
         raise RuntimeError('find_ML_Estimator - Model Lookup is not supported for more than double parameter fits')
@@ -172,6 +164,10 @@ def find_ML_Estimator(image, fitParams = None, outputHandle = None, setParams = 
 
     ## Define modelParams
     modelParams = deepcopy(initialParams)
+
+    ## Estimate Noise of Image
+    if(calcNoise is not None):
+        modelParams['noise'] = calcNoise(image, modelParams['centroid'])
 
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
