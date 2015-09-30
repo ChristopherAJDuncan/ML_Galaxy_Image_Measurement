@@ -1,0 +1,123 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>Python: module model_Production</title>
+</head><body bgcolor="#f0f0f8">
+
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="heading">
+<tr bgcolor="#7799ee">
+<td valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial">&nbsp;<br><big><big><strong>model_Production</strong></big></big></font></td
+><td align=right valign=bottom
+><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="file:/disk1/cajd/Euclid/ML_Estimator/src/model_Production.py">/disk1/cajd/Euclid/ML_Estimator/src/model_Production.py</a></font></td></tr></table>
+    <p><tt>Module&nbsp;that&nbsp;contains&nbsp;the&nbsp;general&nbsp;routines&nbsp;for&nbsp;production&nbsp;of&nbsp;the&nbsp;pixelised&nbsp;(and&nbsp;potentially&nbsp;noisy)&nbsp;surface&nbsp;brightness&nbsp;models&nbsp;and&nbsp;its&nbsp;derivatives.&nbsp;Includes&nbsp;routines&nbsp;to&nbsp;utilise&nbsp;GALSIM,&nbsp;however&nbsp;testing&nbsp;confirms&nbsp;that&nbsp;this&nbsp;does&nbsp;not&nbsp;behave&nbsp;well&nbsp;in&nbsp;producing&nbsp;derivatives,&nbsp;as&nbsp;well&nbsp;as&nbsp;a&nbsp;`user-defined`&nbsp;pixelised&nbsp;model&nbsp;production&nbsp;routine&nbsp;that&nbsp;performs&nbsp;the&nbsp;convolutions&nbsp;natively.&nbsp;Testing&nbsp;confirms&nbsp;that&nbsp;the&nbsp;latter&nbsp;is&nbsp;well&nbsp;behaved&nbsp;and&nbsp;produced&nbsp;sensible&nbsp;results.<br>
+&nbsp;<br>
+NOTE:&nbsp;This&nbsp;routine&nbsp;sets&nbsp;up&nbsp;the&nbsp;default&nbsp;model&nbsp;parameters&nbsp;as&nbsp;well&nbsp;as&nbsp;the&nbsp;means&nbsp;to&nbsp;produce&nbsp;the&nbsp;model&nbsp;images.&nbsp;It&nbsp;does&nbsp;this&nbsp;using&nbsp;individual&nbsp;subroutines&nbsp;ad&nbsp;function,&nbsp;showever&nbsp;this&nbsp;is&nbsp;a&nbsp;situation&nbsp;ripe&nbsp;for&nbsp;the&nbsp;use&nbsp;of&nbsp;a&nbsp;defined&nbsp;class.&nbsp;This&nbsp;is&nbsp;left&nbsp;to&nbsp;future&nbsp;work&nbsp;if&nbsp;desired.<br>
+&nbsp;<br>
+Author:&nbsp;cajd<br>
+Touch&nbsp;Date:&nbsp;28&nbsp;May&nbsp;2015</tt></p>
+<p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#aa55cc">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Modules</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#aa55cc"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top><a href="numpy.html">numpy</a><br>
+</td><td width="25%" valign=top></td><td width="25%" valign=top></td><td width="25%" valign=top></td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#eeaa77">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Functions</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#eeaa77"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl><dt><a name="-SNR_Mapping"><strong>SNR_Mapping</strong></a>(model, var<font color="#909090">=None</font>, SNR<font color="#909090">=None</font>)</dt><dd><tt>Uses&nbsp;GREAT&nbsp;08&nbsp;filter-matched&nbsp;version&nbsp;of&nbsp;SNR,&nbsp;consistent&nbsp;with&nbsp;GALSIM&nbsp;definition.&nbsp;Model&nbsp;passed&nbsp;in&nbsp;should&nbsp;be&nbsp;noise-free.&nbsp;If&nbsp;SNR&nbsp;is&nbsp;passed,&nbsp;std&nbsp;of&nbsp;pixel&nbsp;noise&nbsp;is&nbsp;returned.&nbsp;If&nbsp;var&nbsp;is&nbsp;passed&nbsp;(must&nbsp;be&nbsp;variance&nbsp;of&nbsp;pixel&nbsp;noise),&nbsp;SNR&nbsp;is&nbsp;returned.&nbsp;One&nbsp;but&nbsp;not&nbsp;both&nbsp;must&nbsp;be&nbsp;passed.</tt></dd></dl>
+ <dl><dt><a name="-default_ModelParameter_Dictionary"><strong>default_ModelParameter_Dictionary</strong></a>(**setters)</dt><dd><tt>Returns&nbsp;the&nbsp;default&nbsp;parameter&nbsp;dictionary&nbsp;used&nbsp;in&nbsp;setting&nbsp;up&nbsp;the&nbsp;model&nbsp;image.&nbsp;Dictionary&nbsp;keyword-value&nbsp;pairs&nbsp;can&nbsp;be&nbsp;passed&nbsp;in&nbsp;individually&nbsp;to&nbsp;overwrite&nbsp;defaults.&nbsp;This&nbsp;is&nbsp;essentially&nbsp;a&nbsp;*setter*.<br>
+&nbsp;<br>
+Model&nbsp;Parameters:<br>
+--&nbsp;centroid<br>
+--&nbsp;noise<br>
+--&nbsp;SNR<br>
+--&nbsp;stamp_size<br>
+--&nbsp;pixel_scale:&nbsp;Used&nbsp;in&nbsp;GALSIM&nbsp;implementation,&nbsp;assumed&nbsp;to&nbsp;be&nbsp;one&nbsp;in&nbsp;user&nbsp;implementation&nbsp;(where&nbsp;everything&nbsp;is&nbsp;done&nbsp;in&nbsp;pixels)<br>
+&nbsp;<br>
+--PSF&nbsp;Dictionary&nbsp;(PSF):<br>
+---&nbsp;PSF_Type:&nbsp;Corresponds&nbsp;to&nbsp;the&nbsp;PSF&nbsp;model&nbsp;used&nbsp;in&nbsp;producing&nbsp;the&nbsp;image<br>
+____&nbsp;0:&nbsp;No&nbsp;PSF<br>
+____&nbsp;`Gaussian`&nbsp;or&nbsp;1:&nbsp;Gaussian<br>
+---&nbsp;PSF_size<br>
+---&nbsp;PSF_Gauss_e1<br>
+---&nbsp;PSF_Gauss_e2<br>
+&nbsp;<br>
+--&nbsp;Surface&nbsp;Brightness&nbsp;Profile&nbsp;Dictionary&nbsp;(SB):<br>
+---&nbsp;modelType:&nbsp;(case&nbsp;insensitive)<br>
+___&nbsp;'Gaussian'<br>
+---&nbsp;size<br>
+---&nbsp;e1<br>
+---&nbsp;e2<br>
+---&nbsp;flux<br>
+LENSING&nbsp;PARAMETERS&nbsp;(IGNORED&nbsp;IN&nbsp;THIS&nbsp;ITERATION)<br>
+---&nbsp;magnification<br>
+---&nbsp;shear</tt></dd></dl>
+ <dl><dt><a name="-differentiate_Pixelised_Model_Analytic"><strong>differentiate_Pixelised_Model_Analytic</strong></a>(modelParams, pVal, pLab, n, permute<font color="#909090">=False</font>)</dt></dl>
+ <dl><dt><a name="-differentiate_Pixelised_Model_Numerical"><strong>differentiate_Pixelised_Model_Numerical</strong></a>(modelParams, pVal, pLab, n<font color="#909090">=[1]</font>, order<font color="#909090">=3</font>, interval<font color="#909090">=0.1</font>, eps<font color="#909090">=0.001</font>, maxEval<font color="#909090">=100</font>)</dt></dl>
+ <dl><dt><a name="-gaussian_SBProfile"><strong>gaussian_SBProfile</strong></a>(xy, cen, sigma, e1, e2, Itot)</dt></dl>
+ <dl><dt><a name="-get_Model_Lookup"><strong>get_Model_Lookup</strong></a>(setParams, pLabel, pRange, dP, **modelFuncArgs)</dt><dd><tt>Create&nbsp;a&nbsp;lookup&nbsp;table&nbsp;for&nbsp;the&nbsp;model&nbsp;creation&nbsp;-&nbsp;Useful&nbsp;only&nbsp;for&nbsp;the&nbsp;1D&nbsp;or&nbsp;2D&nbsp;case,&nbsp;where&nbsp;this&nbsp;corresponds&nbsp;to&nbsp;a&nbsp;significant&nbsp;decrease&nbsp;in&nbsp;run-time&nbsp;(or&nbsp;any&nbsp;case&nbsp;where&nbsp;range/dP&nbsp;&lt;&nbsp;nEval*nGal&nbsp;[nEval&nbsp;-&nbsp;function&nbsp;evaluations&nbsp;to&nbsp;get&nbsp;ML&nbsp;point;&nbsp;nGal&nbsp;-&nbsp;number&nbsp;of&nbsp;ML&nbsp;points]&nbsp;<br>
+&nbsp;<br>
+Requires:<br>
+---&nbsp;setParams&nbsp;-&nbsp;dictionary&nbsp;containign&nbsp;the&nbsp;default&nbsp;value&nbsp;for&nbsp;all&nbsp;other&nbsp;model&nbsp;parameters<br>
+---&nbsp;pLabel&nbsp;-&nbsp;string&nbsp;labelling&nbsp;the&nbsp;parameter&nbsp;being&nbsp;fit&nbsp;(that&nbsp;which&nbsp;the&nbsp;lookup&nbsp;grid&nbsp;is&nbsp;evaluated<br>
+---&nbsp;pRange&nbsp;-&nbsp;the&nbsp;range&nbsp;over&nbsp;which&nbsp;the&nbsp;model&nbsp;is&nbsp;evaluated<br>
+---&nbsp;dP&nbsp;-&nbsp;the&nbsp;step&nbsp;size&nbsp;of&nbsp;the&nbsp;evaluation<br>
+---&nbsp;modelFuncArgs:&nbsp;input&nbsp;dictionary&nbsp;of&nbsp;arguements&nbsp;required&nbsp;of&nbsp;the&nbsp;model&nbsp;image&nbsp;production&nbsp;routine.<br>
+&nbsp;<br>
+Returns:<br>
+---&nbsp;lookup&nbsp;dictionary:&nbsp;Dictionary&nbsp;containing&nbsp;details&nbsp;of&nbsp;the&nbsp;lookup&nbsp;table.&nbsp;Includes:<br>
+___useLookup:&nbsp;Default&nbsp;True.&nbsp;If&nbsp;true,&nbsp;use&nbsp;the&nbsp;information&nbsp;contained&nbsp;in&nbsp;the&nbsp;lookup&nbsp;construct<br>
+___Grid:&nbsp;list&nbsp;of&nbsp;grid&nbsp;arrays&nbsp;specifying&nbsp;the&nbsp;parameter&nbsp;values&nbsp;on&nbsp;which&nbsp;the&nbsp;lookup&nbsp;was&nbsp;constructed<br>
+___Images:&nbsp;[[nGrid]*nPar,&nbsp;[nPix,&nbsp;nPix]]&nbsp;&lt;ndarray&gt;&nbsp;the&nbsp;constructed&nbsp;model&nbsp;images&nbsp;evaluated&nbsp;over&nbsp;set&nbsp;parameter&nbsp;grid<br>
+___width:&nbsp;list&nbsp;of&nbsp;widths&nbsp;over&nbsp;which&nbsp;parameter&nbsp;grids&nbsp;are&nbsp;constructed&nbsp;(corresponding&nbsp;to&nbsp;image)<br>
+___nP:&nbsp;number&nbsp;of&nbsp;free&nbsp;parameters&nbsp;over&nbsp;which&nbsp;the&nbsp;lookup&nbsp;is&nbsp;constructed<br>
+___interp:&nbsp;Sets&nbsp;whether&nbsp;index&nbsp;matching&nbsp;or&nbsp;linear&nbsp;interpolation&nbsp;is&nbsp;used&nbsp;in&nbsp;returning&nbsp;model.&nbsp;Interpolation&nbsp;is&nbsp;only&nbsp;implemented&nbsp;for&nbsp;nP&nbsp;=&nbsp;1.<br>
+&nbsp;<br>
+Note:&nbsp;If&nbsp;one&nbsp;cares,&nbsp;this&nbsp;and&nbsp;return&nbsp;Model&nbsp;lookup&nbsp;could&nbsp;be&nbsp;defined&nbsp;in&nbsp;a&nbsp;class.<br>
+--&nbsp;Code&nbsp;is&nbsp;not&nbsp;set&nbsp;up&nbsp;to&nbsp;use&nbsp;models&nbsp;outside&nbsp;the&nbsp;range&nbsp;specified&nbsp;by&nbsp;the&nbsp;lookup&nbsp;table</tt></dd></dl>
+ <dl><dt><a name="-get_Pixelised_Model"><strong>get_Pixelised_Model</strong></a>(Params, noiseType<font color="#909090">=None</font>, Verbose<font color="#909090">=False</font>, outputImage<font color="#909090">=False</font>, sbProfileFunc<font color="#909090">=None</font>, **sbFuncArgs)</dt></dl>
+ <dl><dt><a name="-get_Pixelised_Model_wrapFunction"><strong>get_Pixelised_Model_wrapFunction</strong></a>(x, Params, xKey, returnOrder<font color="#909090">=1</font>, **kwargs)</dt><dd><tt>##-------------------------Model&nbsp;Production-----------------------------------------##</tt></dd></dl>
+ <dl><dt><a name="-return_Model_Lookup"><strong>return_Model_Lookup</strong></a>(lookup, P)</dt><dd><tt>Returns&nbsp;the&nbsp;lookup&nbsp;model&nbsp;image&nbsp;and&nbsp;integer&nbsp;index&nbsp;corresponding&nbsp;to&nbsp;parameter&nbsp;values&nbsp;P.<br>
+&nbsp;<br>
+Requires:<br>
+--&nbsp;lookup:&nbsp;Dictionary&nbsp;defined&nbsp;as&nbsp;in&nbsp;get_Model_Lookup<br>
+--&nbsp;P&nbsp;&lt;single&nbsp;element&nbsp;list/array&gt;:&nbsp;parameter&nbsp;lookup&nbsp;value</tt></dd></dl>
+ <dl><dt><a name="-seperate_Keys_byModel"><strong>seperate_Keys_byModel</strong></a>(der, vals<font color="#909090">=None</font>, refParam<font color="#909090">=None</font>)</dt></dl>
+ <dl><dt><a name="-set_modelParameter"><strong>set_modelParameter</strong></a>(Dict, param_labels, param_values)</dt></dl>
+ <dl><dt><a name="-unpack_Dictionary"><strong>unpack_Dictionary</strong></a>(dict, requested_keys<font color="#909090">=None</font>)</dt></dl>
+ <dl><dt><a name="-update_Dictionary"><strong>update_Dictionary</strong></a>(d, u)</dt><dd><tt>Recurively&nbsp;updates&nbsp;a&nbsp;dictionary&nbsp;(d)&nbsp;and&nbsp;all&nbsp;subdictionaries&nbsp;with&nbsp;input&nbsp;dictionary&nbsp;(u).&nbsp;Taken&nbsp;from&nbsp;StackExchange</tt></dd></dl>
+ <dl><dt><a name="-user_get_Pixelised_Model"><strong>user_get_Pixelised_Model</strong></a>(Params, inputImage<font color="#909090">=None</font>, Verbose<font color="#909090">=False</font>, noiseType<font color="#909090">=None</font>, outputImage<font color="#909090">=False</font>, sbProfileFunc<font color="#909090">=None</font>, der<font color="#909090">=None</font>, **sbFuncArgs)</dt><dd><tt>Native&nbsp;method&nbsp;of&nbsp;image&nbsp;construction&nbsp;using&nbsp;a&nbsp;pixel&nbsp;response&nbsp;function&nbsp;and&nbsp;PSF&nbsp;model,&nbsp;for&nbsp;specified&nbsp;surface&nbsp;brightness&nbsp;profile&nbsp;(10Jul2015)<br>
+&nbsp;<br>
+Tests:<br>
+First-order&nbsp;analytic&nbsp;bias&nbsp;on&nbsp;e1&nbsp;=&nbsp;0.3&nbsp;agrees&nbsp;well&nbsp;with&nbsp;A&nbsp;Halls&nbsp;version.&nbsp;Comparison&nbsp;of&nbsp;image&nbsp;and&nbsp;up&nbsp;to&nbsp;second&nbsp;order&nbsp;derivatives&nbsp;compare&nbsp;to&nbsp;&lt;&nbsp;10%&nbsp;with&nbsp;matched&nbsp;A.&nbsp;Hall&nbsp;version.<br>
+&nbsp;<br>
+Returns&nbsp;a&nbsp;pixelised&nbsp;image&nbsp;set&nbsp;according&nbsp;to&nbsp;Params&nbsp;and&nbsp;using&nbsp;sbProfileFunc.&nbsp;Use&nbsp;of&nbsp;der&nbsp;allows&nbsp;one&nbsp;to&nbsp;specify&nbsp;whether&nbsp;to&nbsp;return&nbsp;derivatives.&nbsp;Uses&nbsp;an&nbsp;enlargementFactor&nbsp;and&nbsp;fineGridFactor&nbsp;to&nbsp;deal&nbsp;with&nbsp;cases&nbsp;where&nbsp;the&nbsp;PS&nbsp;is&nbsp;smaller&nbsp;than&nbsp;the&nbsp;support&nbsp;of&nbsp;the&nbsp;SB&nbsp;profile,&nbsp;and&nbsp;sub-pixel&nbsp;variations.<br>
+&nbsp;<br>
+Requires:<br>
+---&nbsp;Params:&nbsp;dictionary&nbsp;specifying&nbsp;model.<br>
+---&nbsp;inputImage:&nbsp;image&nbsp;input.&nbsp;If&nbsp;none,&nbsp;image&nbsp;is&nbsp;produced&nbsp;according&nbsp;to&nbsp;Params.&nbsp;Allows&nbsp;one&nbsp;to&nbsp;input&nbsp;a&nbsp;noise&nbsp;free&nbsp;image&nbsp;and&nbsp;add&nbsp;noise&nbsp;on&nbsp;the&nbsp;fly&nbsp;without&nbsp;re-evaluating&nbsp;(e.g.&nbsp;in&nbsp;using&nbsp;multiple&nbsp;noise&nbsp;realisations&nbsp;in&nbsp;sims.<br>
+---&nbsp;Verbose:&nbsp;If&nbsp;true,&nbsp;more&nbsp;is&nbsp;output&nbsp;to&nbsp;screen.&nbsp;Useful&nbsp;for&nbsp;debugging.<br>
+---&nbsp;noiseType:&nbsp;Specifies&nbsp;noise&nbsp;model.&nbsp;In&nbsp;none,&nbsp;no&nbsp;noise&nbsp;is&nbsp;added&nbsp;to&nbsp;image.&nbsp;Accepted&nbsp;values:<br>
+___&nbsp;`Gaussian`<br>
+---&nbsp;outputImage:&nbsp;IGNORED.<br>
+---&nbsp;sbProfileFunc:&nbsp;link&nbsp;to&nbsp;function&nbsp;which&nbsp;specifies&nbsp;the&nbsp;SB&nbsp;profile<br>
+---&nbsp;der:&nbsp;List&nbsp;of&nbsp;parameters&nbsp;specifying&nbsp;the&nbsp;derivative&nbsp;wrt&nbsp;which&nbsp;the&nbsp;image&nbsp;is&nbsp;produced.&nbsp;Length&nbsp;of&nbsp;der&nbsp;sets&nbsp;the&nbsp;order&nbsp;of&nbsp;the&nbsp;derivative,&nbsp;and&nbsp;each&nbsp;element&nbsp;specifies&nbsp;parameter:&nbsp;e.g.&nbsp;[size,&nbsp;e1]&nbsp;gives&nbsp;d^2(SB)/(dTde1).&nbsp;Derivatives&nbsp;are&nbsp;taken&nbsp;around&nbsp;values&nbsp;specified&nbsp;in&nbsp;Params.&nbsp;Only&nbsp;analytic&nbsp;derivative&nbsp;are&nbsp;coded&nbsp;up&nbsp;at&nbsp;this&nbsp;stage.<br>
+--&nbsp;sbFuncArgs:&nbsp;Dictionary&nbsp;of&nbsp;argements&nbsp;not&nbsp;specifed&nbsp;otherwise&nbsp;which&nbsp;can&nbsp;be&nbsp;passed&nbsp;to&nbsp;the&nbsp;SB&nbsp;profile&nbsp;function.<br>
+&nbsp;<br>
+Returns:<br>
+image,&nbsp;iParams:&nbsp;Pixelised&nbsp;model&nbsp;image&nbsp;as&nbsp;[nPix,&nbsp;nPix]&nbsp;array,&nbsp;as&nbsp;defined&nbsp;by&nbsp;input,&nbsp;and&nbsp;dictionary&nbsp;of&nbsp;model&nbsp;parameters&nbsp;including&nbsp;any&nbsp;modifications&nbsp;(e.g.&nbsp;update&nbsp;to&nbsp;noise&nbsp;etc).</tt></dd></dl>
+</td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#55aa55">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Data</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#55aa55"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><strong>debug</strong> = False</td></tr></table>
+</body></html>

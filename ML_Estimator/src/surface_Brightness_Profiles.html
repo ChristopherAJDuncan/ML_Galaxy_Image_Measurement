@@ -1,0 +1,68 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>Python: module surface_Brightness_Profiles</title>
+</head><body bgcolor="#f0f0f8">
+
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="heading">
+<tr bgcolor="#7799ee">
+<td valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial">&nbsp;<br><big><big><strong>surface_Brightness_Profiles</strong></big></big></font></td
+><td align=right valign=bottom
+><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="file:/disk1/cajd/Euclid/ML_Estimator/src/surface_Brightness_Profiles.py">/disk1/cajd/Euclid/ML_Estimator/src/surface_Brightness_Profiles.py</a></font></td></tr></table>
+    <p><tt>Module&nbsp;containing&nbsp;the&nbsp;general&nbsp;routines&nbsp;for&nbsp;the&nbsp;production&nbsp;of&nbsp;a&nbsp;non-Pixelised&nbsp;(etc.)&nbsp;surface&nbsp;brightness&nbsp;profile&nbsp;and&nbsp;its&nbsp;derivatives.&nbsp;If&nbsp;run&nbsp;as&nbsp;a&nbsp;stand-alone&nbsp;program,&nbsp;the&nbsp;code&nbsp;will&nbsp;output&nbsp;the&nbsp;functional&nbsp;form&nbsp;of&nbsp;the&nbsp;profile&nbsp;or&nbsp;it's&nbsp;derivatives&nbsp;as&nbsp;specified,&nbsp;as&nbsp;well&nbsp;as&nbsp;C++-ified&nbsp;output&nbsp;to&nbsp;enable&nbsp;easy&nbsp;implementation&nbsp;of&nbsp;Weave&nbsp;for&nbsp;new&nbsp;profiles.&nbsp;See&nbsp;the&nbsp;bottom&nbsp;of&nbsp;the&nbsp;file&nbsp;for&nbsp;details.<br>
+&nbsp;<br>
+Author:&nbsp;cajd<br>
+Touch&nbsp;Date:&nbsp;16&nbsp;June&nbsp;2015</tt></p>
+<p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#aa55cc">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Modules</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#aa55cc"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top><a href="numpy.html">numpy</a><br>
+</td><td width="25%" valign=top></td><td width="25%" valign=top></td><td width="25%" valign=top></td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#eeaa77">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Functions</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#eeaa77"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl><dt><a name="-convert_CPP"><strong>convert_CPP</strong></a>(string)</dt><dd><tt>Routine&nbsp;that&nbsp;takes&nbsp;the&nbsp;output&nbsp;from&nbsp;SymPy&nbsp;and&nbsp;converts&nbsp;it&nbsp;to&nbsp;CPP&nbsp;code.&nbsp;This&nbsp;is&nbsp;really&nbsp;taking&nbsp;x**y&nbsp;-&gt;&nbsp;pow(x,y)&nbsp;in&nbsp;a&nbsp;whole&nbsp;load&nbsp;of&nbsp;complecating&nbsp;cases.&nbsp;It&nbsp;was&nbsp;an&nbsp;absolute&nbsp;bugger&nbsp;to&nbsp;code&nbsp;(seriously&nbsp;the&nbsp;worse&nbsp;code&nbsp;Ive&nbsp;had&nbsp;to&nbsp;produce),&nbsp;however&nbsp;it&nbsp;allows&nbsp;one&nbsp;to&nbsp;simply&nbsp;run&nbsp;the&nbsp;SymPy&nbsp;code&nbsp;with&nbsp;printType&nbsp;=&nbsp;CPP,&nbsp;and&nbsp;copy&nbsp;and&nbsp;paste&nbsp;the&nbsp;result&nbsp;directly&nbsp;into&nbsp;a&nbsp;C++&nbsp;program&nbsp;(including&nbsp;weave&nbsp;implementation&nbsp;used&nbsp;here.&nbsp;You`re&nbsp;welcome.<br>
+&nbsp;<br>
+author:&nbsp;cajd<br>
+Date:7Aug2015<br>
+&nbsp;<br>
+Has&nbsp;been&nbsp;verified&nbsp;to&nbsp;work&nbsp;for&nbsp;all&nbsp;combinations&nbsp;up&nbsp;to&nbsp;second&nbsp;derivative&nbsp;for&nbsp;Gaussian&nbsp;SB&nbsp;profile,&nbsp;for&nbsp;parameter&nbsp;set&nbsp;[e1,e2,size]</tt></dd></dl>
+ <dl><dt><a name="-gaussian_SBProfile_Sympy"><strong>gaussian_SBProfile_Sympy</strong></a>(xy, cen, isigma, ie1, ie2, iItot, K<font color="#909090">=0.0</font>, g1<font color="#909090">=0.0</font>, g2<font color="#909090">=0.0</font>, der<font color="#909090">=[]</font>, printOnly<font color="#909090">=False</font>, suppressLensing<font color="#909090">=True</font>, printStyle<font color="#909090">='CPP'</font>)</dt></dl>
+ <dl><dt><a name="-gaussian_SBProfile_Weave"><strong>gaussian_SBProfile_Weave</strong></a>(xy, cen, isigma, ie1, ie2, iItot, der<font color="#909090">=[]</font>)</dt><dd><tt>Routine&nbsp;that&nbsp;produces&nbsp;the&nbsp;SB&nbsp;profile&nbsp;and&nbsp;its&nbsp;derivatives&nbsp;using&nbsp;C++&nbsp;code&nbsp;called&nbsp;through&nbsp;Weave&nbsp;inline.<br>
+&nbsp;<br>
+Note:&nbsp;As&nbsp;the&nbsp;code&nbsp;is&nbsp;compiled&nbsp;for&nbsp;the&nbsp;first&nbsp;run&nbsp;and&nbsp;then&nbsp;run&nbsp;from&nbsp;precompiled&nbsp;code,&nbsp;it&nbsp;may&nbsp;be&nbsp;the&nbsp;case&nbsp;that&nbsp;the&nbsp;code&nbsp;will&nbsp;be&nbsp;quickest&nbsp;when&nbsp;compiled&nbsp;in&nbsp;seperate&nbsp;routines<br>
+&nbsp;<br>
+The&nbsp;evaluation&nbsp;of&nbsp;the&nbsp;SB&nbsp;profile&nbsp;and&nbsp;its&nbsp;derivatives&nbsp;in&nbsp;the&nbsp;presence&nbsp;of&nbsp;a&nbsp;lensing&nbsp;field&nbsp;is&nbsp;involved&nbsp;using&nbsp;this&nbsp;method,&nbsp;therefore&nbsp;it&nbsp;has&nbsp;been&nbsp;neglected&nbsp;for&nbsp;now&nbsp;(The&nbsp;application&nbsp;of&nbsp;the&nbsp;method&nbsp;itself&nbsp;does&nbsp;not&nbsp;require&nbsp;lensing&nbsp;paramaters&nbsp;where&nbsp;the&nbsp;shear&nbsp;is&nbsp;taken&nbsp;as&nbsp;the&nbsp;average&nbsp;across&nbsp;a&nbsp;sample&nbsp;[e.g.&nbsp;ring&nbsp;test],&nbsp;however&nbsp;the&nbsp;simulation&nbsp;of&nbsp;sheared&nbsp;images&nbsp;may&nbsp;require&nbsp;this.&nbsp;In&nbsp;this&nbsp;case,&nbsp;only&nbsp;the&nbsp;lensed&nbsp;surface&nbsp;brightness&nbsp;profile&nbsp;itself&nbsp;is&nbsp;required,&nbsp;and&nbsp;this&nbsp;may&nbsp;be&nbsp;more&nbsp;easily&nbsp;implemented&nbsp;in&nbsp;the&nbsp;full&nbsp;matrix&nbsp;formalism&nbsp;of&nbsp;gaussian_SBProfile_Py&nbsp;in&nbsp;Python&nbsp;(numpy)<br>
+&nbsp;<br>
+Required:<br>
+--&nbsp;xy:&nbsp;Grid&nbsp;[x,y]&nbsp;over&nbsp;which&nbsp;SB&nbsp;profile&nbsp;is&nbsp;evaluated<br>
+--&nbsp;cen:&nbsp;Centroid&nbsp;[x,y]<br>
+--&nbsp;isigma:&nbsp;Size&nbsp;of&nbsp;SB&nbsp;profile<br>
+--&nbsp;ie1,&nbsp;ie2:&nbsp;Ellipticity&nbsp;components&nbsp;of&nbsp;SB&nbsp;profile<br>
+--&nbsp;iTOT:&nbsp;Total&nbsp;integrated&nbsp;flux,&nbsp;corresponding&nbsp;to&nbsp;amplitude&nbsp;of&nbsp;profile&nbsp;in&nbsp;Gaussian&nbsp;case.<br>
+---der:&nbsp;Sets&nbsp;the&nbsp;parameters&nbsp;to&nbsp;be&nbsp;differentiated&nbsp;with&nbsp;respect&nbsp;to.&nbsp;The&nbsp;size&nbsp;of&nbsp;each&nbsp;sub-list&nbsp;sets&nbsp;the&nbsp;order&nbsp;of&nbsp;differentiation.&nbsp;e.g.&nbsp;to&nbsp;return&nbsp;SB&nbsp;profile,&nbsp;use&nbsp;der&nbsp;=&nbsp;[]&nbsp;(or&nbsp;leave&nbsp;at&nbsp;default.&nbsp;To&nbsp;get&nbsp;d2I/dr2:&nbsp;der&nbsp;=&nbsp;['size',&nbsp;'size'],&nbsp;an&nbsp;To&nbsp;get&nbsp;d2I/drde1:&nbsp;der&nbsp;=&nbsp;['size',&nbsp;'e1']&nbsp;etc.<br>
+&nbsp;<br>
+Returns:<br>
+--SB:&nbsp;surface&nbsp;brightness&nbsp;profile&nbsp;evaluated&nbsp;according&nbsp;to&nbsp;input&nbsp;parameters&nbsp;and&nbsp;derivative&nbsp;labels,&nbsp;on&nbsp;grid&nbsp;specified&nbsp;by&nbsp;xy.</tt></dd></dl>
+ <dl><dt><a name="-iterativeStringFind"><strong>iterativeStringFind</strong></a>(string, sub)</dt><dd><tt>Helper&nbsp;routine&nbsp;used&nbsp;in&nbsp;converting&nbsp;SymPy&nbsp;output&nbsp;to&nbsp;C++&nbsp;output.&nbsp;Interatvely&nbsp;search&nbsp;a&nbsp;string&nbsp;for&nbsp;a&nbsp;sub&nbsp;string</tt></dd></dl>
+ <dl><dt><a name="-operatorSearchRight"><strong>operatorSearchRight</strong></a>(string, opSearch, index)</dt><dd><tt>Helper&nbsp;routine&nbsp;in&nbsp;converting&nbsp;SymPy&nbsp;output&nbsp;to&nbsp;C++&nbsp;style&nbsp;output.<br>
+Routine&nbsp;that&nbsp;starts&nbsp;from&nbsp;index&nbsp;entered,&nbsp;searches&nbsp;to&nbsp;right&nbsp;to&nbsp;the&nbsp;next&nbsp;operator,&nbsp;as&nbsp;defined&nbsp;in&nbsp;opSearch,&nbsp;and&nbsp;then&nbsp;places&nbsp;an&nbsp;extra&nbsp;`)`&nbsp;before&nbsp;that&nbsp;operator.&nbsp;Used&nbsp;to&nbsp;bracket&nbsp;pow&nbsp;functions&nbsp;to&nbsp;the&nbsp;right,&nbsp;accounting&nbsp;for&nbsp;the&nbsp;case&nbsp;were&nbsp;x**(some&nbsp;function)&nbsp;[parantheses&nbsp;important&nbsp;here]</tt></dd></dl>
+ <dl><dt><a name="-runWeave_GaussSB"><strong>runWeave_GaussSB</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_dT"><strong>runWeave_GaussSB_dT</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_ddT"><strong>runWeave_GaussSB_ddT</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_dde1"><strong>runWeave_GaussSB_dde1</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_dde2"><strong>runWeave_GaussSB_dde2</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_de1"><strong>runWeave_GaussSB_de1</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_de1dT"><strong>runWeave_GaussSB_de1dT</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_de1de2"><strong>runWeave_GaussSB_de1de2</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_de2"><strong>runWeave_GaussSB_de2</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+ <dl><dt><a name="-runWeave_GaussSB_de2dT"><strong>runWeave_GaussSB_de2dT</strong></a>(SB, flux, e1, e2, size, dx, dy, nX, nY, weaveVar, code, codeTail)</dt></dl>
+</td></tr></table>
+</body></html>
