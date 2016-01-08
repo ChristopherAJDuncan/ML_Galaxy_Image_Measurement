@@ -4,16 +4,16 @@ Program to process (create and analysis) multiple noise realisations of an image
 '''
 
 import numpy as np
-import src.image_measurement_ML as ML
-import src.model_Production as modPro
-import src.surface_Brightness_Profiles as SBPro
+import python.image_measurement_ML as ML
+import python.model_Production as modPro
+import python.surface_Brightness_Profiles as SBPro
 import sys
 
-Output = './ML_Output/SNRBias/28Aug2015/2D/e1_e2/xtol_minus5/NoLookup/Simplex/BiasCorrected/LowSNR/'
+Output = './ML_Output/Bio/'
 #'./ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
 #'./ML_Output/SNRBias/9Jul2015/e1/15x15/HighRes/Lookup/ZeroInitialGuess/Powell/'
-filePrefix = 'e10p3_e20p3'
-produce = [1,1] #Analytic, Sims
+filePrefix = 'size1p4'
+produce = [1,0] #Analytic, Sims
 
 ### Set-up
 
@@ -23,13 +23,13 @@ if(len(sys.argv) >= 2):
     inputSNR = float(sys.argv[1])
     SNRRange = [inputSNR, inputSNR, 1.]
 else:
-    SNRRange = [150., 201., 50.] #Min, Max, Interval
+    SNRRange = [5., 505., 100.] #Min, Max, Interval
 minimiseMethod = 'simplex'#'Powell' #Acceptable are: simplex, powell, cg, ncg, bfgs, l_bfgs_b. See scipy documentation for discussion of these methods
 errorType = 'Fisher'
 
 ##Input default values for parameters which will be fitted (this is used to set fitParams, so parameters to be fit must be entered here)
-fittedParameters = dict(e1 = 0.3, e2 = 0.3)
-initialGuess = dict(e1 = 0.25, e2 = 0.25)
+fittedParameters = dict(size = 1.41)
+initialGuess = dict(size = 1.41)
 #fittedParameters = dict(e1 = 0.3)
 #initialGuess = dict(e1 = 0.)
 #fittedParameters = dict(size = 1.2) ##Edit to include all doen in fitParamsLabels etc.
@@ -47,10 +47,10 @@ bruteRange = [(0.21, 0.39), (0.21, 0.39)]
 biasCorrect = 1
 
 ##Initial Galaxy Set up
-imageShape = (15., 15.) #size = 0.84853
-imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.2, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0., 0.], flux = 4.524, modelType = 'gaussian'),\
+imageShape = (10., 10.) #size = 0.84853
+imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.41, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0., 0.], flux = 10, modelType = 'gaussian'),\
                                                        centroid = (np.array(imageShape)+1)/2, noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
-                                                       PSF = dict(PSF_Type = 0, PSF_size = 1., PSF_Gauss_e1 = 0.1, PSF_Gauss_e2 = 0.0)
+                                                       PSF = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0., PSF_Gauss_e2 = 0.0)
                                                        )
 
 
@@ -103,8 +103,8 @@ def bias_bySNR_analytic():
     ToDo:
     Add this to bias_bySNR routine
     '''
-    import src.measure_Bias as mBias
-    import src.model_Production as modPro
+    import python.measure_Bias as mBias
+    import python.model_Production as modPro
 
     global imageParams
     modPro.set_modelParameter(imageParams, fitParamsLabels, fitParamsValues)

@@ -1,6 +1,6 @@
-import src.model_Production as modPro
-import src.surface_Brightness_Profiles as SBPro
-import src.image_measurement_ML as imMeas
+import python.model_Production as modPro
+import python.surface_Brightness_Profiles as SBPro
+import python.image_measurement_ML as imMeas
 import numpy as np
 
 #Single Run - Derivative

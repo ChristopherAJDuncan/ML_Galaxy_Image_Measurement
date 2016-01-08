@@ -1,5 +1,5 @@
-import src.model_Production as modPro
-import src.surface_Brightness_Profiles as SBPro
+import python.model_Production as modPro
+import python.surface_Brightness_Profiles as SBPro
 
 #Single Run - Derivative
 print 'Running'
