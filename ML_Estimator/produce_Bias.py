@@ -8,6 +8,7 @@ import python.image_measurement_ML as ML
 import python.model_Production as modPro
 import python.surface_Brightness_Profiles as SBPro
 import sys
+from python.IO import *
 
 Output = './ML_Output/Bio/'
 #'./ML_Output/SNRBias/10Aug2015/1DTests/Powell/e1/15x15/NOLookup/HighSNR/'
@@ -71,29 +72,6 @@ lookupRange = [[0.2, 0.4],[0.2, 0.4]]
 lookupWidth = [0.001,0.001]
 
 
-def intialise_Output(filename, mode = 'w', verbose = True):
-    import os
-    '''
-    Checks for directory existence and opens file for output.
-    Modes are python default:
-    --r : read-only (should most likely not be used with this routine
-    --a : append
-    --w : write
-
-    verbose : If true, will output filename to screen
-    '''
-
-    
-    directory = os.path.dirname(filename)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        
-    handle = open(filename, mode)
-
-    if(verbose):
-        print 'File will be output to: ',filename
-
-    return handle
 
 
 def bias_bySNR_analytic():

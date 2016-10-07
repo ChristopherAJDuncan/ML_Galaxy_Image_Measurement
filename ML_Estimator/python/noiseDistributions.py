@@ -1,0 +1,148 @@
+
+# coding: utf-8
+
+# In[ ]:
+
+import numpy as np;
+import scipy;
+import scipy.stats as scist;
+import scipy.interpolate as sciInterp;
+from scipy.stats import poisson, norm, uniform;
+import pylab as pl
+
+
+# In[ ]:
+
+def pdf_conv(D1, D2):
+    #Works for continous PDFs is both deifned over the same grid - edit to allow different grid, but same grid intervals
+    int1 = D1.interval(.99999);
+    int2 = D2.interval(.99999);
+    supp = [min(int1[0], int2[0]), max(int1[1], int2[1])]
+    grid = np.linspace(supp[0], supp[1], 1000)
+    
+    return grid, scipy.convolve(D1.pdf(grid), D2.pdf(grid), 'same')
+
+
+# In[ ]:
+
+def pdf_conv_dis_cont(D,C):
+    #Puts discrete PMF onto continuous grid via interpolation: likely incorrect
+    intD = D.interval(.9999);
+    intC = C.interval(.9999);
+    
+    grid = np.linspace(intC[0],intC[1],1000)
+    dgrid = np.arange(*intD)
+    
+    #Put discrete distribution onto same grid as output for easier convolution (Q: can this be done in the inverse)
+    Dpmf = np.interp(grid, dgrid, D.pmf(dgrid))
+    
+    f = pl.figure(); ax = f.add_subplot(111)
+    ax.plot(dgrid)
+    
+    return grid, scipy.convolve(C.pdf(grid), Dpmf, 'same')
+
+
+# In[ ]:
+
+def pdf_conv_dis_cont_full(D,C):
+    #Works, likely slow
+    intC = C.interval(.999999);
+    intD = D.interval(.999999);
+    grid = np.linspace(intD[0]+intC[0],intD[1]+intC[1],1000);
+    
+    conv = np.zeros(grid.shape[0])
+    for i in range(grid.shape[0]):
+        Dlow = max(intD[0],int(grid[i]+intC[0]))
+        Dhi = min(intD[1], int(grid[i]+intC[1]+1))
+            
+        dGrid = np.arange(Dlow,Dhi)
+         
+        Dpmf = D.pmf(dGrid)
+        
+        toSum = Dpmf*C.pdf((grid[i]*np.ones(dGrid.shape[0]))-dGrid)
+        conv[i] = toSum.sum()
+        
+    #Manually edit limits to zero
+    conv[0] = 0.;
+    conv[-1] = 0.;
+        
+    return grid, conv
+    
+
+
+# In[ ]:
+
+def PN_Likelihood(phot, spec):
+    #Returns p(counts|photons, spec), on a grid of counts
+    D = poisson(phot*spec['qe']+spec['charge']);
+    C = norm(0., spec['readout']/spec['ADUf']);
+    
+    return pdf_conv_dis_cont_full(D,C);
+
+
+# In[ ]:
+
+def inverse_Sample(xt,ft, nSamples = 1):
+    #Construct CDF
+    CDF = np.zeros(ft.shape[0])
+    if(ft[0] != 0 or ft[-1] != 0):
+        print "PDF at limits:", ft[0], " :: ", ft[-1]
+        raise ValueError("Inverse Sampling: PDF must be zero")
+    CDF[0] = 0;
+    for i in range(1,CDF.shape[0]):
+        CDF[i] = CDF[i-1] + 0.5*(ft[i]+ft[i-1])*(xt[i]-xt[i-1])
+    
+    if(CDF[-1] < 0.99 or CDF[-1] > 1.01):
+        raise ValueError("Inverse Sampling: CDF does not sum to accepted tolerance")
+    CDF[-1] = 1 #NOTE: This needs edited out
+    if(CDF[-1] != 1):
+        print "CDF sums to ", CDF[-1]
+        raise ValueError("Inverse sampling: CDF does not sum to one")
+    
+    #Invert CDF with interpolation
+    inv_cdf = sciInterp.interp1d(CDF, xt)
+    
+    #Generate Random Number
+    r = np.random.rand(nSamples)
+    
+    try:
+        res = inv_cdf(r)
+    except ValueError:
+        print "Fatal Error in inverse sampling."
+        print "CDF has ", CDF[0], CDF[-1]
+        print "xt has ", xt[0], xt[-1]
+        print "Random limits ", np.amin(r), np.amax(r)
+        exit()
+
+    #Sample
+    return res
+
+
+# In[ ]:
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Enter in arguments as:')
+    
+    parser.add_argument('-PLam', type = float, help='A required float which gives the hsape parameter for the Poisson distribution')
+    parser.add_argument('-Nsi', type = float, help ='A required float which gives the width of the Gaussian')
+
+    args = parser.parse_args()
+
+    grid, conv = pdf_conv_dis_cont_full(poisson(args.PLam), norm(0., args.Nsi))
+#Plot Convolved
+    f = pl.figure(); ax = f.add_subplot(211)
+    ax.plot(grid, conv)
+    
+#Interpolate
+    sample = inverse_Sample(grid,conv,100000)
+    print "Finished sampling", sample
+    ax.hist(sample, bins = 100, normed = True)
+    
+    ax = f.add_subplot(212)
+#Plot un-convolved
+    dGrid = np.arange(0, int(grid[-1]+1))
+    ax.plot(dGrid, poisson.pmf(dGrid, args.PLam))
+    pl.show()
+

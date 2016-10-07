@@ -45,10 +45,10 @@ def default_ModelParameter_Dictionary(**setters):
     """
 
     ### PSF Declaration
-    PSFDict = dict(PSF_Type = 0, PSF_size = 2., PSF_Gauss_e1 = 0.7, PSF_Gauss_e2 = 0.0)
+    PSFDict = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0.0, PSF_Gauss_e2 = 0.0)
 
     ## SB Declaration
-    SBDict = dict(modelType = 'gaussian', size = 3., e1 = 0., e2 = 0., flux = 1.e3, magnification = 1., shear = [0., 0.])
+    SBDict = dict(modelType = 'gaussian', size = 1.41, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.])
 
     imgshape = np.array([10, 10])
     dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict)

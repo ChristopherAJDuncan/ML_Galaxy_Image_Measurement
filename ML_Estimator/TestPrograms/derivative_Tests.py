@@ -1,12 +1,12 @@
-
-
+import python.model_Production as modPro
+import python.surface_Brightness_Profiles as SBPro
 
 #Single Run - Derivative
 print 'Running'
 
-S0 = 0.3; derLabel = 'e1'
+S0 = 3.0; derLabel = 'size'
 imageParams = modPro.default_ModelParameter_Dictionary()
-imageParams['SNR'] = 200.
+imageParams['SNR'] = 20.
 imageParams[derLabel] = 2*S0
 imageParams['stamp_size'] = [10,10]
 
@@ -15,6 +15,12 @@ image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
 
 ##Reset noise value to accomodate easier comparison (note that noise on image, which must be measured, affects the derivative value)
 
+##Get truly analytic derivative
+modelParams = imageParams.copy()
+diffIm = modPro.get_Pixelised_Model_wrapFunction(S0, modelParams, derLabel,  noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = [derLabel])
+
+'''
+##Produce numerical derivative
 diffIm = modPro.differentiate_Pixelised_Model_Numerical(imageParams, S0, derLabel, n = 1, interval = 0.1)[0]
 #print 'Derivative of image is:'
 #print diffIm.sum()
@@ -50,4 +56,4 @@ diffpixlnL = finite_difference_derivative(ML.get_logLikelihood, S0, args = [derL
 print diffpixlnL
 
 print 'Ratio:', diffpixlnL/(diffpixlnL_analytic).sum()
-
+'''
