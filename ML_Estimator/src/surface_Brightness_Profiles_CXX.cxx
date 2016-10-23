@@ -1,13 +1,17 @@
 #include <vector>
 #include <cmath>
 
-//---------- Gaussian Surface Brightness Profiles (Flattened). In all of the below, the arguments list goes as:
+//---------- GAUSSIAN Surface Brightness Profiles (Flattened). In all of the below, the arguments list goes as:
 // flux (scalar)
-// e1
-// e2
-// size
+// e1 - Component of ellipticty along x-y axis
+// e2 - Component of ellipticity along x+y, x-y axis
+// size  - Width of gaussian (scales as sigma^2 = size^2*(|e|^2 - 1)
 // dx: std::vector of doubles giving the distance from the centroid (of each pixel)
 // dy: as dx, in y-direction
+// - NOTE: Uses only size, e1, e2 --> NO implementation of mag, shear
+
+
+//---------- Direct SB profile
 
 std::vector<double> cxx_GaussSB(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy)
 {
@@ -21,6 +25,8 @@ std::vector<double> cxx_GaussSB(double flux, double e1, double e2, double size, 
   }
   return SB;
 }
+
+//---------- First Order Derivatives
 
 std::vector<double> cxx_GaussSB_dT(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy)
 {
@@ -62,7 +68,7 @@ std::vector<double> cxx_GaussSB_de2(double flux, double e1, double e2, double si
   return SB;
 }
 				
-//-- 2nd Order Derivatives
+//--------------------- 2nd Order Derivatives
 //__ Auto Terms
 
 std::vector<double> cxx_GaussSB_dde1(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy)

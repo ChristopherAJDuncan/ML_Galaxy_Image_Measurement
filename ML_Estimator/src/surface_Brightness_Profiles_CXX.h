@@ -1,14 +1,18 @@
 #include <vector>
 #include <cmath>
 
+//----------------- GAUSSIAN SB
+//-- Direct
 std::vector<double> cxx_GaussSB(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);
 
+//-- 1st order derivatives
 std::vector<double> cxx_GaussSB_dT(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);				
 
 std::vector<double> cxx_GaussSB_de1(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);
 
 std::vector<double> cxx_GaussSB_de2(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);
 
+//---2nd order derivatives
 std::vector<double> cxx_GaussSB_dde1(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);
 
 std::vector<double> cxx_GaussSB_dde2(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);
