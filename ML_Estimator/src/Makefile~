@@ -1,0 +1,6 @@
+
+
+
+swig:
+	swig -c++ -python surface_Brightness_Profiles_CXX.i
+	

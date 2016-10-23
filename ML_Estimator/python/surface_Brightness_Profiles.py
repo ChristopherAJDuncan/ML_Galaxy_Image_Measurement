@@ -253,6 +253,121 @@ def operatorSearchRight(string, opSearch, index):
     return string
 
 
+def init_SRCPath():
+    """                                                                               
+    Initialises the sys path to include the directory where the run modules are stored. Ideally this should not be necessary                                                                                 
+    """
+    import os
+    import sys
+
+    #Define src path as current files path, up on level, src/
+    srcPath = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
+    srcPath = os.path.join('/',srcPath,'src/')
+    
+    if not srcPath in sys.path:
+        sys.path.insert(1,srcPath)
+    del srcPath
+
+    
+### C++ implemnations of surface brightness profiles and derivatives
+def gaussian_SBProfile_CXX(xy, cen, isigma, ie1, ie2, iItot, der = []):
+    """
+    Routine that produces the SB profile and its derivatives using C++ code..
+
+    Note: As the code is compiled for the first run and then run from precompiled code, it may be the case that the code will be quickest when compiled in seperate routines
+
+    The evaluation of the SB profile and its derivatives in the presence of a lensing field is involved using this method, therefore it has been neglected for now (The application of the method itself does not require lensing paramaters where the shear is taken as the average across a sample [e.g. ring test], however the simulation of sheared images may require this. In this case, only the lensed surface brightness profile itself is required, and this may be more easily implemented in the full matrix formalism of gaussian_SBProfile_Py in Python (numpy)
+
+    Required:
+    -- xy: Grid [x,y] over which SB profile is evaluated
+    -- cen: Centroid [x,y]
+    -- isigma: Size of SB profile
+    -- ie1, ie2: Ellipticity components of SB profile
+    -- iTOT: Total integrated flux, corresponding to amplitude of profile in Gaussian case.
+    ---der: Sets the parameters to be differentiated with respect to. The size of each sub-list sets the order of differentiation. e.g. to return SB profile, use der = [] (or leave at default. To get d2I/dr2: der = ['size', 'size'], an To get d2I/drde1: der = ['size', 'e1'] etc.
+
+    Returns:
+    --SB: surface brightness profile evaluated according to input parameters and derivative labels, on grid specified by xy.
+    """
+    
+    import numpy as np
+
+    dx = xy[0]-cen[0]
+    dy = xy[1]-cen[1]
+
+    if(cen[0] > xy[0].max() or cen[0] < xy[0].min()):
+        raise ValueError('gaussian_SBProfile_Weave - Centroid (x) lies outwith the range of the PS, FATAL :'+str(cen))
+    if(cen[1] > xy[1].max() or cen[1] < xy[1].min()):
+        raise ValueError('gaussian_SBProfile_Weave - Centroid (y) lies outwith the range of the PS, FATAL :'+str(cen))
+
+    ##Rename variables to fit in with Sympy output
+    e1 = ie1
+    e2 = ie2
+    size = isigma
+    flux = iItot
+
+    #Depreacted?
+    Var = ['SB', 'flux', 'e1', 'e2', 'size', 'dx', 'dy']
+    Args = [flux, e1, e2, size, dx, dy]
+
+    init_SRCPath()
+    import surface_Brightness_Profiles_CXX as cxxSB
+    
+    if(len(der) == 0):
+        ##SB profile directly
+        SB = cxxSB.cxx_GaussSB(*Args)
+
+    elif(der == ['flux']):
+        Args[0] = 1.
+        SB = cxxSB.cxx_GaussSB(*Args)
+
+    elif(der == ['size']):
+        SB = cxxSB.cxx_GaussSB_dT(*Args)
+
+    elif(der == ['e1']):
+        SB = cxxSB.cxx_GaussSB_de1(*Args)
+
+    elif(der == ['e2']):
+        SB = cxxSB.cxx_GaussSB_de2(*Args)
+
+    elif(der == ['e1','e1']):
+        SB = cxxSB.cxx_GaussSB_dde1(*Args)
+
+    elif(der == ['e2','e2']):
+        SB = cxxSB.cxx_GaussSB_dde2(*Args)
+
+    elif(der == ['size','size']):
+        SB = cxxSB.cxx_GaussSB_ddT(*Args)
+
+    elif(der == ['flux', 'flux']):
+        #Do nothing as SB is zeros
+        SB = np.zeros((dx.shape[0], dy.shape[0]))
+
+    elif(der == ['size', 'flux'] or der == ['flux', 'size']):
+        #Use the fact that d/dflux just takes flux -> 1 (for guassian which is linear in flux)
+        Args[0] = 1.
+        SB = cxxSB.cxx_GaussSB_dT(*Args)
+
+    elif(der == ['size','e1'] or der == ['e1','size'] ):
+        SB = cxxSB.cxx_GaussSB_de1dT(*Args)
+
+    elif(der == ['size','e2'] or der == ['e2','size'] ):
+        SB = cxxSB.cxx_GaussSB_de2dT(*Args)
+
+    elif(der == ['e1','e2'] or der == ['e2','e1'] ):
+        SB = cxxSB.cxx_GaussSB_de1de2(*Args)
+
+    else:
+        raise RuntimeError('CXX run not coded up for derivative:',str(der))
+
+    #Cast into numpy form
+    SB = np.array(SB)
+    SB = SB.reshape((dx.shape[0], dy.shape[0]))
+    
+    return SB.copy()
+
+
+
 ### Weave Declarations -- C++ Implementation ###
 
 def gaussian_SBProfile_Weave(xy, cen, isigma, ie1, ie2, iItot, der = []):
@@ -278,6 +393,8 @@ def gaussian_SBProfile_Weave(xy, cen, isigma, ie1, ie2, iItot, der = []):
     from scipy import weave
     import numpy as np
 
+    raise RuntimeError("Weave implemnation has been deprecated. CXX implemation should be used instead")
+    
     nX = xy[0].shape[0]; nY = xy[1].shape[0]
 
     dx = xy[0]-cen[0]

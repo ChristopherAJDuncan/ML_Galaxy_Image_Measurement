@@ -1,0 +1,4 @@
+#include <vector>
+#include <cmath>
+
+std::vector<double> cxx_GaussSB(double flux, double e1, double e2, double size, std::vector<double> dx, std::vector<double> dy);				

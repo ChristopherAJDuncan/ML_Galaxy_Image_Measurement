@@ -29,8 +29,12 @@ def estimate_Noise(image, maskCentroid = None):
 
     Returns:
     -- result: Scalar giving the standard deviation of the pixel in the input image, after masking (if appropriate).
+
+    NOTE: UNTESTED for multiple images
     
     """
+
+
     if(maskCentroid is not None):
         res = np.zeros(max(maskCentroid[0], maskCentroid[1], abs(image.shape[0]-maskCentroid[0]), abs(image.shape[1]-maskCentroid[1])))
     else:
@@ -44,11 +48,15 @@ def estimate_Noise(image, maskCentroid = None):
         maskRad = (con-1)*1 #Done in pixels
 
         if(maskCentroid is not None):
-            tImage[maskCentroid[0]-maskRad:maskCentroid[0]+maskRad, maskCentroid[1]-maskRad:maskCentroid[1]+maskRad] = 0.
+            if(len(tImage.shape) == 3):
+                for i in range(tImage.shape[0]):
+                    tImage[i][maskCentroid[0]-maskRad:maskCentroid[0]+maskRad, maskCentroid[1]-maskRad:maskCentroid[1]+maskRad] = 0.
+            else:
+                tImage[maskCentroid[0]-maskRad:maskCentroid[0]+maskRad, maskCentroid[1]-maskRad:maskCentroid[1]+maskRad] = 0.
 
         res[con-1] = tImage.std()
 
-        if(maskCentroid == None):
+        if(maskCentroid is None):
             break
         elif(con == res.shape[0]):
             break
@@ -94,7 +102,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     return np.sqrt(np.diag(Fin))
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, noiseCalc = None, bcoutputHandle = None, error = 'Fisher', **iParams):
+def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, calcNoise = None, bcoutputHandle = None, error = 'Fisher', **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
     from surface_Brightness_Profiles import gaussian_SBProfile_Weave
@@ -166,11 +174,32 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
     ## Estimate Noise of Image
     if(calcNoise is not None):
-        modelParams['noise'] = calcNoise(image, modelParams['centroid'])
+        #Assumes each image is flattened and therefore needs to be reshaped.
+        if(len(image.shape) == 2):
+            #Use only the first image
+            tImage = image[0].reshape(modelParams['stamp_size'])
+        elif(len(image.shape)==1):
+            tImage = image.reshape(modelParams['stamp_size'])
+        else:
+            raise ValueError("find_ML_Estimate: calcNoise: image not of expected shape")
+        modelParams['noise'] = calcNoise(tImage, modelParams['centroid'])
 
+    print "Noise of image is (estimated): ", modelParams['noise']
+        
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
+
+    ###### Sanity check image dimensions compared to model parameters
+    imDim = len(image.shape)
+    if(imDim > 2):
+        raise ValueError("find_ML_Estimator: Image must not have more than two dimensions. Single postage stamp image must be flattened")
+    elif(imDim == 1 and image.shape[0] != np.array(modelParams['stamp_size']).prod()):
+        raise ValueError("find_ML_Estimator: Flattened image (1D) length does not correspond to model parameter dimensions")
+    elif(imDim == 2 and image.shape[1] != np.array(modelParams['stamp_size']).prod()):
+        print 'Image shape: ', image.shape, ' Model shape:' , modelParams['stamp_size']
+        raise ValueError("find_ML_Estimator: image sahpe of second dimension is not consistent with expected model parameter dimension. 2D image array must contain multiple images across first dimension, and (flattened) pixels as a data vector in the second dimension: Have you remembered to flatten the image?")
+
 
     if(preSearchMethod is not None):
         ## Conduct a presearch of the parameter space to set initial guess (usually grid-based or brute-force)
@@ -189,7 +218,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
                 ###Evaluate error based on brute by integration - this would only work if bruteRange cover the full range where the PDF is non-zero
 
-                if(error.lower() == 'brute'):
+                if(error is not None and error.lower() == 'brute'):
                     raise RuntimeError('find_ML_Estimator - brute labelled as means of evaluating error. This is possbible, but not coded as limitation in use of bruteRange to cover the whole region where the likelihood is non-zero. When a prior is included, this could be taken to be exact, provided one knows the range where the prior has compact support, and the bruteRange reflects this.')
                 ## use scipy.integrate.trapz(bruteVal, x = bruteGrid[i], axis = i) with i looping over all parameters (ensure axis set properly...
 
@@ -237,7 +266,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     ##Make numpy array (in the case where 1D is used and scalar is returned):
     if(len(fitParams)==1):
         maxima = np.array(makeIterableList(maxima))
-
+        
     if(vverbose):
         print 'maxima is:', maxima
 
@@ -253,7 +282,14 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
         '''
  
         model, disc =  modPro.user_get_Pixelised_Model(fittedParams, sbProfileFunc = gaussian_SBProfile_Weave)
-        residual = image-model
+        residual = image
+        if(len(image.shape) == 2):
+            residual -= image
+        elif(len(image.shape) == 3):
+            for i in range(image.shape[0]):
+                residual[i] -= image[i]
+        else:
+            raise ValueError("Error calculating residual: Image has an unknown rank")
 
         import pylab as pl
         ##Plot image and model
@@ -264,7 +300,10 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
         pl.colorbar(im)
         ax = f.add_subplot(212)
         ax.set_title('Image')
-        im = ax.imshow(image, interpolation = 'nearest')
+        if(len(image.shape) == 3):
+            im = ax.imshow(image[0], interpolation = 'nearest')
+        else:
+            im = ax.imshow(image, interpolation = 'nearest')
         pl.colorbar(im)
 
         pl.show()
@@ -286,7 +325,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     ##Output Result
     if(outputHandle is not None):
         np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
-
+        
     ## Bias Correct
     if(biasCorrect == 0):
         Returned.append(maxima)
@@ -308,7 +347,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
 
     ## Get Error on measurement. Brute error would have been constructed on the original brute force grid evaluation above.
-    if(error.lower() == 'fisher'):
+    if(error is not None and error.lower() == 'fisher'):
         err = fisher_Error_ML(maxima, fitParams, image, setParams, modelLookup) #Use finalised modelParams here?
         Returned.append(err)
 
@@ -341,26 +380,26 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = deepcopy(setParams)
-
-    if(setParams['stamp_size'] != image.shape):
+    
+    if((setParams['stamp_size']-np.array(image.shape)).sum() > 0):
         raise RuntimeError('get_logLikelihood - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
-
+    
     parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
     if(len(parameters) != len(pLabels)):
         raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test): parameters:', str(parameters), ' labels:', str(pLabels))
-
-
+    
+    
     ##Vary parameters which are being varied as input
     modPro.set_modelParameter(modelParams, pLabels, parameters)
-
+    
     ''' Deprecated for above
     for l in range(len(pLabels)):
-        if(pLabels[l] not in modelParams):
-            raw_input('Error setting model parameters in get_logLikelihood: Parameter not recognised. <Enter> to continue')
-        else:
-            modelParams[pLabels[l]] = parameters[l]
+    if(pLabels[l] not in modelParams):
+    raw_input('Error setting model parameters in get_logLikelihood: Parameter not recognised. <Enter> to continue')
+    else:
+    modelParams[pLabels[l]] = parameters[l]
     '''
-
+    
     #Test reasonable model values - Effectively applying a hard prior
     if(math.sqrt(modelParams['SB']['e1']**2. + modelParams['SB']['e2']**2.) >= 0.99):
         ##Set log-probability to be as small as possible
@@ -368,7 +407,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
         #raise ValueError('get_logLikelihood - Invalid Ellipticty values set')
     if(modelParams['SB']['size'] <= 0.):
         return sys.float_info.max/10
-
+    
     ''' Get Model'''
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
@@ -388,14 +427,37 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     pl.show()
     '''
 
+    """ DEPRECATED for multiple models
     if(model.shape != image.shape):
+        print "\n\n Model shape: ", model.shape, " :: Image Shape:", image.shape 
         raise ValueError('get_logLikelihood - model returned is not of the same shape as the input image.')
+    """
     
+    #Flatten model
+    model = model.flatten()
+
     #Construct log-Likelihood assuming Gaussian noise. As this will be minimised, remove the -1 preceeding
     if(vverbose):
         print 'Noise in ln-Like evaluation:', modelParams['noise']
-    pixlnL =  (np.power(image-model,2.))
-    lnL = pixlnL.sum()
+
+    keepPix = returnType.lower() == 'pix' or returnType.lower() == 'all'
+
+    pixlnL = np.array([])
+    lnL = 0
+    if(len(image.shape) == len(model.shape)+1):
+        print "Considering sum over images", pLabels, parameters
+        for i in range(image.shape[0]):
+            tpixlnL = np.power(image[i]-model,2.)
+            lnL += tpixlnL.sum()
+            if(keepPix):
+                pixlnL = np.append(pixlnL, tpixlnL)
+    
+    else:
+        tpixlnL = np.power(image-model,2.)
+        lnL += tpixlnL.sum()
+        if(keepPix):
+            pixlnL = np.append(pixlnL,tpixlnL)
+
     pixlnL *= 0.5/(modelParams['noise']**2.); lnL *= 0.5/(modelParams['noise']**2.)
 
     if(vverbose):
@@ -443,7 +505,12 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     Tests:
     -- Fisher error agrees wel with simulated output for error.
     '''
+
+    raise ValueError("differentiate_logLikelihood_Gaussian_Analytic: This has been disabled as Weave is not behaving. Further modifications require that model, and derivatives are flattened to mimic that requirement that image is also flattened, and an extension to multiple images (this should occur naturally if model and derivatives are repeated to mimic multiple images")
     
+    #if(len(image.shape) > 1):
+    #    raise ValueError("differentiate_logLikelihood_Gaussian_Analytic: This routine has not been extended to multiple realisations yet")
+
     ##To be useful as part of a minimisation routine, the arguements passed to this function must be the same as those passed to the ln-Likelihood evalutaion also. This suggest possibly two routines: one, like the model differentiation itself should just return the various derivatives, and a wrapper routine which produces only the relevent derivatives required for mimimisation
     ## Third order is ignored for now, as this wold require an edit to the methdo of calculating model derivatives, and it is unlikely that a third order derivative would ever really be necessary (excpet in the case where an analytic derivative of the model is wanted for the calculation of the bias, where simulations over many images are used: usually, the known statistics of the Gaussian lileihood can be used to remove this necessity anyway).
 
@@ -456,8 +523,8 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = deepcopy(setParams)
 
-    if(setParams['stamp_size'] != image.shape):
-        raise RuntimeError('differentiate_logLikelihood_Gaussian_Analytic - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
+    #if(setParams['stamp_size'] != image.shape):
+    #    raise RuntimeError('differentiate_logLikelihood_Gaussian_Analytic - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
 
     ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
     parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
@@ -473,10 +540,18 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     else:
         model = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = gaussian_SBProfile_Weave)[0]
 
-
     ''' Get model derivatives '''    
     modDer = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 1, permute = False)
     #modDer stores only the n'th derivative of all parameters entered, stored as an nP*nPix*nPix array.
+
+    ''' Testing flattening
+    print "modDer shape:", modDer.shape()
+
+    #Flatten modDer to mimic flattened image
+    modDer = [modDer[i].flatten() for i in range(nP)]
+    print "modDer shape:", modDer.shape()
+    raw_input()
+    '''
 
     if(order == 2):
         ##Calculate 2nd derivative also

@@ -59,6 +59,7 @@ def pdf_conv_dis_cont_full(D,C):
          
         Dpmf = D.pmf(dGrid)
         
+        #Convolve by summing all discrete non-zero entries
         toSum = Dpmf*C.pdf((grid[i]*np.ones(dGrid.shape[0]))-dGrid)
         conv[i] = toSum.sum()
         
@@ -72,6 +73,21 @@ def pdf_conv_dis_cont_full(D,C):
 
 # In[ ]:
 
+def N_Likelihood(phot, spec):
+    if "sigma" in spec:
+        sig = spec["sigma"]
+    elif "readout" in spec and "ADUf" in spec:
+        sig = spec['readout']/spec['ADUf']
+    else:
+        raise ValueError("N_Likelihood: Sigma uncertainty not recognised in input specification dictionary")
+    C = norm(phot, sig)
+
+    nSig = 8.
+
+    grid = np.linspace(phot-nSig*sig, phot+nSig*sig, 1000)
+
+    return grid, C.pdf(grid)
+
 def PN_Likelihood(phot, spec):
     #Returns p(counts|photons, spec), on a grid of counts
     D = poisson(phot*spec['qe']+spec['charge']);
@@ -83,11 +99,13 @@ def PN_Likelihood(phot, spec):
 # In[ ]:
 
 def inverse_Sample(xt,ft, nSamples = 1):
+    from math import fabs
+
     #Construct CDF
     CDF = np.zeros(ft.shape[0])
-    if(ft[0] != 0 or ft[-1] != 0):
+    if(fabs(ft[0]) > 1e-10 or fabs(ft[-1]) > 1e-10):
         print "PDF at limits:", ft[0], " :: ", ft[-1]
-        raise ValueError("Inverse Sampling: PDF must be zero")
+        raise ValueError("Inverse Sampling: PDF must be zero at limits")
     CDF[0] = 0;
     for i in range(1,CDF.shape[0]):
         CDF[i] = CDF[i-1] + 0.5*(ft[i]+ft[i-1])*(xt[i]-xt[i-1])
@@ -125,7 +143,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Enter in arguments as:')
     
-    parser.add_argument('-PLam', type = float, help='A required float which gives the hsape parameter for the Poisson distribution')
+    parser.add_argument('-PLam', type = float, help='A required float which gives the shape parameter for the Poisson distribution')
     parser.add_argument('-Nsi', type = float, help ='A required float which gives the width of the Gaussian')
 
     args = parser.parse_args()

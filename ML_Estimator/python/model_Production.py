@@ -394,6 +394,7 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     else:
         SBDer, PSFDer = [],[]
 
+        
     ##Deal with unphysical/invalid parameters by retunring a default value for the model (set to zero)
     if(iParams['SB']['e1']*iParams['SB']['e1'] + iParams['SB']['e2']*iParams['SB']['e2'] >= 1. or iParams['SB']['size'] <= 0):
         return np.zeros(iParams['stamp_size'])

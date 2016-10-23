@@ -6,18 +6,19 @@ import numpy as np
 import python.noiseDistributions as nDist
 import pylab as pl
 import python.IO as IO
+import os
 
 #Define the number of samples to use
 nReal = 1000
 Output = "./Realisations/"
 
 #Define Image to be simulated
-imageShape = (10., 10.)
-imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.41, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0., 0.], flux = 10, modelType = 'gaussian'),\
-                                                       centroid = (np.array(imageShape)+1)/2, noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
+imageShape = (10, 10)
+imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.41, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0., 0.], flux = 1000, modelType = 'gaussian'),\
+                                                       centroid = (np.array(imageShape)+1)/2., noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
                                                        PSF = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0., PSF_Gauss_e2 = 0.0))
 
-def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None): 
+def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None, noiseFunc = nDist.PN_Likelihood, outputPrefix = os.path.join(Output,"Realisations.dat")): 
 #Single Run - Derivative
     print 'Running Data Production'
     
@@ -25,10 +26,10 @@ def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None):
     image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
     
 #Start outputting. First line is always the noise free model
-    handle = IO.initialise_Output(Output+"Realisation.dat", mode = "a")
-#handle.write("# Flux:"+str(imageParams['flux'])+" e1:"+str(imageParams['e1'])+" e2:"+str(imageParams['e2'])+
-#             " size:"+str(imageParams['size'])+" stamp_size:"+str(imageParams['stamp_size'])+" centroid:"+str(imageParams['centroid']) +"\n")
-    handle.write("# First line is noise-free image")
+    handle = IO.initialise_Output(outputPrefix, mode = "a")
+    handle.write("# Flux:"+str(imageParams['SB']['flux'])+" e1:"+str(imageParams['SB']['e1'])+" e2:"+str(imageParams['SB']['e2'])+
+                 " size:"+str(imageParams['SB']['size'])+" stamp_size:"+str(imageParams['stamp_size'])+" centroid:"+str(imageParams['centroid']) +"\n")
+    handle.write("# First line is noise-free image \n")
     
 #Produce noise realisations by sampling from the correct distribution
     
@@ -41,12 +42,12 @@ def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None):
     if(ccdSpecs is None):
         ccdSpecs = dict(qe = 0.9, charge = 0.001, readout = 1., ADUf = 1)
     
-    nImage = np.zeros((fImage.shape[0], nReal))
-    for i in range(nImage.shape[0]):
-        counts, pdf = nDist.PN_Likelihood(fImage[i], ccdSpecs)
+    nImage = np.zeros((nReal,fImage.shape[0]))
+    for i in range(fImage.shape[0]):
+        counts, pdf = noiseFunc(fImage[i], ccdSpecs)
         
         try:
-            nImage[i] = nDist.inverse_Sample(counts, pdf, nReal)
+            nImage[:,i] = nDist.inverse_Sample(counts, pdf, nReal)
         except ValueError as e:
             print "Sampling failed for likelihood shown::"
             print "Exception raised: ", e.args[0]
