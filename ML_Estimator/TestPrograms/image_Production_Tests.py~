@@ -1,7 +1,11 @@
+import init_Build
+init_Build.init_build()
+
 import python.model_Production as modPro
 import python.surface_Brightness_Profiles as SBPro
 import python.image_measurement_ML as imMeas
 import numpy as np
+import python.noiseDistributions as nDist
 
 #Single Run - Derivative
 print 'Running'
@@ -15,22 +19,20 @@ imageParams['flux'] = 4.524
 imageParams['stamp_size'] = [30,30]
 imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
 
+der = ['e1', 'e2']
 
 ###Get image using GALSIM default models
 #image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = 'Gaussian', outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
 #image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
 
 ##Surface Brightness profile routine
-image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
-
-exit()
-
-imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
+image, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
 
 ### User-defined model with Guassian noise
 #image = np.genfromtxt('./TestPrograms/Hall_Models/fid_image.dat')
 #image = image.T
 
+print "Produced CXX image"
 
 
 #print 'image Noise Estimated as:', imMeas.estimate_Noise(image, maskCentroid = imageParams['centroid'])
@@ -52,23 +54,23 @@ imageSB, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, o
 
 #imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1', 'e1'])
 
-print 'Final Check:: sumImage, sumImageSB, ratioSum(image/SB), flux:', image.sum(), imageSB.sum(), image.sum()/imageSB.sum(), imageParams['flux']
+#print 'Final Check:: sumImage, sumImageSB, ratioSum(image/SB), flux:', image.sum(), imageSB.sum(), image.sum()/imageSB.sum(), imageParams['flux']
 
 import pylab as pl
 f = pl.figure()
 ax = f.add_subplot(211)
 im = ax.imshow(image, interpolation = 'nearest')
 pl.colorbar(im)
-ax = f.add_subplot(212)
-im = ax.imshow(imageSB, interpolation = 'nearest')
-pl.colorbar(im)
+# ax = f.add_subplot(212)
+# im = ax.imshow(imageSB, interpolation = 'nearest')
+# pl.colorbar(im)
 pl.show()
 
 
 ### Plot Residual
 import pylab as pl
 
-pl.imshow((imageSB-image))
+#pl.imshow((imageSB-image))
 #pl.set_title('GALSIM - User-Specified')
 pl.colorbar()
 

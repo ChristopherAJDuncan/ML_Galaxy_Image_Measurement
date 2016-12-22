@@ -105,7 +105,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
 def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, calcNoise = None, bcoutputHandle = None, error = 'Fisher', **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
-    from surface_Brightness_Profiles import gaussian_SBProfile_Weave
+    from surface_Brightness_Profiles import gaussian_SBProfile_CXX
     import measure_Bias as mBias
     from generalManipulation import makeIterableList
     """
@@ -281,7 +281,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
             fittedParams[fitParams[i]] =  maxima[i]
         '''
  
-        model, disc =  modPro.user_get_Pixelised_Model(fittedParams, sbProfileFunc = gaussian_SBProfile_Weave)
+        model, disc =  modPro.user_get_Pixelised_Model(fittedParams, sbProfileFunc = gaussian_SBProfile_CXX)
         residual = image
         if(len(image.shape) == 2):
             residual -= image
@@ -412,7 +412,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
     else:
-        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
+        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
 
     ''' Model, lookup comparison '''
     '''
@@ -478,7 +478,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = None, returnType = None, order = 1, signModifier = -1.):
     import generalManipulation
     import model_Production as modPro
-    from surface_Brightness_Profiles import gaussian_SBProfile_Weave
+    from surface_Brightness_Profiles import gaussian_SBProfile_CXX
     '''
     Returns the analytic derivative of the Gaussian log-Likelihood (ignoring parameter-independent prefactor whose derivative is zero) for parameters labelled by pLabels.
     Uses analytic derivative of the pixelised model as given in differentiate_Pixelised_Model_Analytic routine of model_Production routine.
@@ -506,7 +506,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     -- Fisher error agrees wel with simulated output for error.
     '''
 
-    raise ValueError("differentiate_logLikelihood_Gaussian_Analytic: This has been disabled as Weave is not behaving. Further modifications require that model, and derivatives are flattened to mimic that requirement that image is also flattened, and an extension to multiple images (this should occur naturally if model and derivatives are repeated to mimic multiple images")
+    #raise ValueError("differentiate_logLikelihood_Gaussian_Analytic: This has been disabled as Weave is not behaving. Further modifications require that model, and derivatives are flattened to mimic that requirement that image is also flattened, and an extension to multiple images (this should occur naturally if model and derivatives are repeated to mimic multiple images")
     
     #if(len(image.shape) > 1):
     #    raise ValueError("differentiate_logLikelihood_Gaussian_Analytic: This routine has not been extended to multiple realisations yet")
@@ -517,14 +517,10 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
 
     ### First derivative only are needed, so for now this will be coded only to deal with first derivatives.
     ### Therefore, n = 1, permute = false by default
-    ### Note, that this code is unlikely to speed up any computation provided that the derivative is calculated using SymPY. Therefore this must be addressed.
 
     ### Set up model parameters as input
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = deepcopy(setParams)
-
-    #if(setParams['stamp_size'] != image.shape):
-    #    raise RuntimeError('differentiate_logLikelihood_Gaussian_Analytic - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
 
     ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
     parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
@@ -538,7 +534,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
     else:
-        model = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = gaussian_SBProfile_Weave)[0]
+        model = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = gaussian_SBProfile_CXX)[0]
 
     ''' Get model derivatives '''    
     modDer = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 1, permute = False)
@@ -553,11 +549,37 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     raw_input()
     '''
 
+    modDer2 = None
     if(order == 2):
         ##Calculate 2nd derivative also
         modDer2 = modPro.differentiate_Pixelised_Model_Analytic(modelParams, parameters, pLabels, n = 2, permute = True)
             #modDer2 stores the 2nd derivative of all parameters entered, stored as an nP*nP*nPix*nPix array.
 
+    #Flatten and reshape model and derivative model images to reflect the form of the input image (which can by multi-realisations)
+    model = model.flatten()
+    modDer = modDer.reshape((modDer.shape[0], -1))
+    if(modDer2 is not None):
+        modDer2 = modDer2.reshape((modDer2.shape[0],modDer2.shape[1], -1))
+        
+    if(len(image.shape) == 2):
+        ## Repeat each nReal times
+        nRepeat = image.shape[0]
+        
+        model = np.tile(model, (nRepeat, 1))
+        
+        modDer = np.array([np.tile(modDer[i],(nRepeat,1)) for i in range(modDer.shape[0])])
+
+        #There's most likely a better way to do this (i.e. quicker)
+        modDer2 = np.array([ [np.tile(modDer2[i,j],(nRepeat,1)) for j in range(modDer2.shape[1])] for i in range(modDer2.shape[0])])
+        
+    # print "Shape check:"
+    # print "Image:", image.shape
+    # print "Model:", model.shape
+    # print "Derivative:", modDer.shape
+    # if(modDer2 is not None):
+    #     print "2nd Derivative: ", modDer2.shape
+    # raw_input("Check")
+            
     ##Construct the result to be returned. This is a scalar array, with length equal to nP, and where each element corresponds to the gradient in that parameter direction
     nP = len(parameters)
     delI = image - model
@@ -576,7 +598,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     elif(order == 2):
         res = np.zeros((nP,nP))
         ##This could and should be sped-up using two single loops rather than a nested loop, or by defining delI and dIm*dIm in the same dimension as modDer2
-        ## Alternate speed-up is to implement with Weave
+        ## Alternate speed-up is to implement with CXX
         for i in range(nP):
             for j in range(nP):
                 res[i,j] = (delI*modDer2[i,j] - modDer[i]*modDer[j]).sum(axis = -1).sum(axis = -1)

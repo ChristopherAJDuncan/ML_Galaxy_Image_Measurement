@@ -310,6 +310,7 @@ def gaussian_SBProfile_CXX(xy, cen, isigma, ie1, ie2, iItot, der = []):
     Var = ['SB', 'flux', 'e1', 'e2', 'size', 'dx', 'dy']
     Args = [flux, e1, e2, size, dx, dy]
 
+    #-- NOTE : If this throws an exception, its likely that the addition of the src path to sys in init did not go well
     init_SRCPath()
     import surface_Brightness_Profiles_CXX as cxxSB
     

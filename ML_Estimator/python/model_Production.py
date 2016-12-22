@@ -454,8 +454,8 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
             if(iParams['PSF']['PSF_Type'] == 1 or str(iParams['PSF']['PSF_Type']).lower() == 'gaussian'):
                 ## Use definition of elliptical SB profile, with total_flux == 1. so that integral(PSF) = 1
                 #psf = gaussian_SBProfile(xy, psfCen,  iParams['PSF_Parameters'][0],  iParams['PSF_Parameters'][1],  iParams['PSF_Parameters'][2], 1.0)
-                from PSF_Models import PSFModel_Weave
-                psf = PSFModel_Weave(xy, psfCen, iParams['PSF'], der = PSFDer)
+                from PSF_Models import PSFModel_CXX
+                psf = PSFModel_CXX(xy, psfCen, iParams['PSF'], der = PSFDer)
             else:
                 raise ValueError('user_get_Pixelised_Model - PSF_Type entered not known:'+str(iParams['PSF_Type']))
 
@@ -716,7 +716,7 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
     """
     Wrapper function to produce an analytic derivatve of the pixelised image, by using the fact that the model production routines can be called defining the surface brightness profile routine, and the arguments that are passed into it.
 
-    Surface Brightness Profiles: An alterantive SB profile implementation can be provided by using sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, however the Weave implementation uses the output of the Sympy routine in C++ through weave (SciPy), is noticably faster, and has been tested to be exact to the default float precision in python. 
+    Surface Brightness Profiles: An alterantive SB profile implementation can be provided by using sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, however the Weave implementation uses the output of the Sympy routine in C++ through weave (SciPy), is noticably faster, and has been tested to be exact to the default float precision in python. WEAVE replaced by SWIG compiled CXX version
 
     Requires:
     -- modelParams: Disctionary containing default (fixed) values for all parameters which are not being measured
@@ -742,7 +742,7 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
             Res = np.zeros((nP, nPix[0], nPix[1]))
             for i in range(nP):
                 der = [pLab[i]]
-                Res[i,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = der)
+                Res[i,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
         
         elif n == 2:
             Res = np.zeros((nP, nP, nPix[0], nPix[1]))
@@ -750,7 +750,7 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
             for i in range(nP):
                 for j in range(i, nP):
                     der = [pLab[i], pLab[j]]
-                    Res[i,j,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = der)
+                    Res[i,j,:,:] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
                     Res[j,i,:,:] = Res[i,j] #Enforce symmetry
 
     else:
@@ -764,7 +764,7 @@ def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute =
             #    der = [pLab]*n
             else:
                 raise ValueError('differentiate_Pixelised_Model_Analytic - pLab entered is not acceptable for the order of differentiation entered:'+str(n)+':'+str(pLab))
-            Res[par] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Weave, der = der)
+            Res[par] = get_Pixelised_Model_wrapFunction(pVal, modelParams, pLab,  noiseType = None, outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
 
     return Res
 
