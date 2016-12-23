@@ -177,12 +177,46 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
         #Assumes each image is flattened and therefore needs to be reshaped.
         if(len(image.shape) == 2):
             #Use only the first image
-            tImage = image[0].reshape(modelParams['stamp_size'])
+            #tImage = image[0].reshape(modelParams['stamp_size'])
+            #maskCentroid = modelParams['centroid']
+            
+            #Use an alternate stack of closest to even (assumes that pixel error is roughly symmetric), (the alternative stack should negate any feature and background, the effect on the noise is uncertain). Can only be used on multiple realisations of the same field
+            if(image.shape[0]%2 == 0):
+                finalIndex = image.shape[0]
+            else:
+                finalIndex = image.shape[0]-1
+            print "Final Index check (should be even): ", finalIndex
+            aStackImage = np.zeros(image[0].shape)
+            for i in range(finalIndex):
+                aStackImage += image[i]#*np.power(-1, i)
+
+            print "Estimating noise from stack-subtracted image"
+            aStackImage /= float(finalIndex)
+            tImage = (image[0]-aStackImage).reshape(modelParams['stamp_size'])
+
+            #Turn off centroid masking (as feature should be removed), subtract stacked from each realisation, and flatten for noise estimation
+            maskCentroid = None
+            aStackImage = np.tile(aStackImage, (image.shape[0],1))
+            tImage = (image-aStackImage).flatten()
+            
+            #-- Note, this could be improved by removing maskCentroid in this case, thus allowing the flattened array to be used (a larger data vector), and thus reducing the noise on the error estimation
+            
+            ##Plot
+            # import pylab as pl
+            # f = pl.figure()
+            # ax = f.add_subplot(111)
+            # im = ax.imshow(tImage)
+            # pl.colorbar(im)
+            # pl.show()
+
+            
+            
         elif(len(image.shape)==1):
             tImage = image.reshape(modelParams['stamp_size'])
+            maskCentroid = modelParams['centroid']
         else:
             raise ValueError("find_ML_Estimate: calcNoise: image not of expected shape")
-        modelParams['noise'] = calcNoise(tImage, modelParams['centroid'])
+        modelParams['noise'] = calcNoise(tImage, maskCentroid)
 
     print "Noise of image is (estimated): ", modelParams['noise']
         
@@ -445,7 +479,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     pixlnL = np.array([])
     lnL = 0
     if(len(image.shape) == len(model.shape)+1):
-        print "Considering sum over images", pLabels, parameters
+        #print "Considering sum over images", pLabels, parameters
         for i in range(image.shape[0]):
             tpixlnL = np.power(image[i]-model,2.)
             lnL += tpixlnL.sum()

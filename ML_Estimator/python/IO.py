@@ -1,6 +1,14 @@
+import os
 
+def initialise_Directory(direct):
+        
+    directory = os.path.dirname(os.path.dirname(direct))
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    return 1
+        
 def initialise_Output(filename, mode = 'w', verbose = True):
-    import os
     '''
     Checks for directory existence and opens file for output.
     Modes are python default:
@@ -11,10 +19,7 @@ def initialise_Output(filename, mode = 'w', verbose = True):
     verbose : If true, will output filename to screen
     '''
 
-    
-    directory = os.path.dirname(filename)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    initialise_Directory(filename)
         
     handle = open(filename, mode)
 

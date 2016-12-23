@@ -61,32 +61,46 @@ def default_ModelParameter_Dictionary(**setters):
     return dct
 
 
-def unpack_Dictionary(dict, requested_keys = None):
+def unpack_Dictionary(dic, requested_keys = None):
     from generalManipulation import makeIterableList
     """
     Helper routine which returns a list of dictionary values corresponding to the list of requested keys input. If no keys are input, the full list of values corresponding to the full dictionary keys list (in stored order) is returned. Used to extract model parameters. Automatically searchs all sub-directory levels defined (hardwired to SB and PSF only)
     """
 
+    ##This could be generalised if a list of subdicts (currently SB and PSF could be passed), or inferred
 
     if(requested_keys is None):
-        raise RuntimeError('unpack_Dictionary - NoneType for req_keys disabled. Requires recode to produce seperate keys: Try appending output of separate_Keys_byModel')
-        requested_keys = dict.keys() ##Make so is iterable (i.e. sperates PSF and SB keys)
+        #This could be improved by querying intelligently, e.g. getting list of keys, then checking each as dictionary, then replacing (remove + concat) if dictionary
+        requested_keys = dic['SB'].keys()
+        requested_keys += dic['PSF'].keys()
     elif(not hasattr(requested_keys, "__iter")):
         requested_keys = makeIterableList(requested_keys)
 
     ## Set SB Keys
     rescount = 0; res = ['F']*len(requested_keys)
     for k in requested_keys:
-        if((np.array(dict['SB'].keys()) == k).sum() > 0): #SB Parameter
-            res[rescount] = dict['SB'][k]; rescount += 1
-        elif((np.array(dict['PSF'].keys()) == k).sum() > 0): #PSF Parameter
-            res[rescount] = dict['PSF'][k]; rescount += 1
-        #elif( (np.array(dict.keys()) == k).sum() > 0): #Other Parameter
-        #    res[rescount] = dict[k]; rescount += 1
+        if((np.array(dic['SB'].keys()) == k).sum() > 0): #SB Parameter
+            res[rescount] = dic['SB'][k]; rescount += 1
+        elif((np.array(dic['PSF'].keys()) == k).sum() > 0): #PSF Parameter
+            res[rescount] = dic['PSF'][k]; rescount += 1
+        #elif( (np.array(dic.keys()) == k).sum() > 0): #Other Parameter
+        #    res[rescount] = dic[k]; rescount += 1
     return res[:rescount]
 
+def print_ModelParameters(dic):
 
+    subList = ["SB", "PSF"]
 
+    for sub in subList:
+        #!! Generalise this
+        requested_keys = dic[sub].keys()
+        vals = unpack_Dictionary(dic,requested_keys)
+
+        print "\n --", sub, ":"
+        for i,par in enumerate(requested_keys):
+            print "-----", par, " : ", vals[i]
+
+            
 def update_Dictionary(d, u):
     """
     Recurively updates a dictionary (d) and all subdictionaries with input dictionary (u). Taken from StackExchange

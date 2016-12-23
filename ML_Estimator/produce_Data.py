@@ -26,7 +26,7 @@ def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None, noiseFunc =
     image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
     
     #Start outputting. First line is always the noise free model
-    handle = IO.initialise_Output(outputPrefix, mode = "a")
+    handle = IO.initialise_Output(outputPrefix, mode = "w")
     handle.write("# Flux:"+str(imageParams['SB']['flux'])+" e1:"+str(imageParams['SB']['e1'])+" e2:"+str(imageParams['SB']['e2'])+
                  " size:"+str(imageParams['SB']['size'])+" stamp_size:"+str(imageParams['stamp_size'])+" centroid:"+str(imageParams['centroid']) +"\n")
     handle.write("# First line is noise-free image \n")
