@@ -48,7 +48,7 @@ def run(imageParams = None, verbose = False):
         
         #Set up a reasonable output
         SB = dict(size = 1.41, e1 = 0.1, e2 = 0.0, magnification = 1., shear = [0.,0.], flux = 1000, modelType = 'gaussian')
-        PSF = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0., PSF_Guass_e2 = 0.0)
+        PSF = dict(PSF_Type = 0, PSF_size = 0.001, PSF_Gauss_e1 = 0., PSF_Guass_e2 = 0.0)
     
         imageShape = (10,10)
         imageParams = modPro.default_ModelParameter_Dictionary(SB = SB, PSF = PSF, centroid = (np.array(imageShape)+1)/2., noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.)
@@ -64,7 +64,7 @@ def run(imageParams = None, verbose = False):
     ccdSpecs = dict(qe = 0.9, charge = 0.001, readout = 1., ADUf = 1) #PGN
 
     #Alternate is to use noiseDist.PN_Likelihood
-    data = proDat.produce_Realisations(imageParams, nReal, ccdSpecs, noiseDist.N_Likelihood, os.path.join(output, "Realisations.dat"))
+    data = proDat.produce_Realisations(imageParams, nReal, ccdSpecs, noiseDist.PN_Likelihood, os.path.join(output, "Realisations.dat"))
 
     if(verbose):
         print 'Constructed data'

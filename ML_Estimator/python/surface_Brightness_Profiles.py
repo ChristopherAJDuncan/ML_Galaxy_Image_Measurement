@@ -308,7 +308,7 @@ def gaussian_SBProfile_CXX(xy, cen, isigma, ie1, ie2, iItot, der = []):
 
     #Depreacted?
     Var = ['SB', 'flux', 'e1', 'e2', 'size', 'dx', 'dy']
-    Args = [flux, e1, e2, size, dx, dy]
+    Args = [float(flux), float(e1), float(e2), float(size), dx, dy]
 
     #-- NOTE : If this throws an exception, its likely that the addition of the src path to sys in init did not go well
     init_SRCPath()

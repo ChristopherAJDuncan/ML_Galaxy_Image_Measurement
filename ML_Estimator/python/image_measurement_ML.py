@@ -91,7 +91,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     Tests:
     -- Value of marginalised error is verified to be comparable to the variance over 5x10^5 simulated images for e1, e2 as free parameters without a prior.
     """
-
+    
     parameters = deepcopy(ML); pLabels = deepcopy(fitParams)
 
     ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
@@ -161,65 +161,64 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     ## centroid should be set to the center of the image, here assumed to be the middle pixel
 
     if(setParams is None):
+        print "Setting parameters to default"
         initialParams = modPro.default_ModelParameter_Dictionary()
     else:
+        print "Updating initial parameters with set Params"
         initialParams = modPro.default_ModelParameter_Dictionary()
         modPro.update_Dictionary(initialParams, setParams)
         ## Deprecated initialParams.update(setParams)
-
+        
     modPro.set_modelParameter(initialParams, iParams.keys(), iParams.values())
-
+    
     ## Define modelParams
     modelParams = deepcopy(initialParams)
-
+    
     ## Estimate Noise of Image
     if(calcNoise is not None):
         #Assumes each image is flattened and therefore needs to be reshaped.
         if(len(image.shape) == 2):
-            #Use only the first image
-            #tImage = image[0].reshape(modelParams['stamp_size'])
-            #maskCentroid = modelParams['centroid']
-            
-            #Use an alternate stack of closest to even (assumes that pixel error is roughly symmetric), (the alternative stack should negate any feature and background, the effect on the noise is uncertain). Can only be used on multiple realisations of the same field
-            if(image.shape[0]%2 == 0):
-                finalIndex = image.shape[0]
+            if(image.shape[0] < 2):
+                #Use only the first image
+                tImage = image[0].reshape(modelParams['stamp_size'])
+                maskCentroid = modelParams['centroid']
             else:
-                finalIndex = image.shape[0]-1
-            print "Final Index check (should be even): ", finalIndex
-            aStackImage = np.zeros(image[0].shape)
-            for i in range(finalIndex):
-                aStackImage += image[i]#*np.power(-1, i)
+                #Use an alternate stack of closest to even (assumes that pixel error is roughly symmetric), (the alternative stack should negate any feature and background, the effect on the noise is uncertain). Can only be used on multiple realisations of the same field
+                if(image.shape[0]%2 == 0):
+                    finalIndex = image.shape[0]
+                else:
+                    finalIndex = image.shape[0]-1
+                    print "Final Index check (should be even): ", finalIndex
+                aStackImage = np.zeros(image[0].shape)
+                for i in range(finalIndex):
+                    aStackImage += image[i]#*np.power(-1, i)
 
-            print "Estimating noise from stack-subtracted image"
-            aStackImage /= float(finalIndex)
-            tImage = (image[0]-aStackImage).reshape(modelParams['stamp_size'])
+                print "Estimating noise from stack-subtracted image"
+                aStackImage /= float(finalIndex)
+                tImage = (image[0]-aStackImage).reshape(modelParams['stamp_size'])
+            
+                #Turn off centroid masking (as feature should be removed), subtract stacked from each realisation, and flatten for noise estimation
+                maskCentroid = None
+                aStackImage = np.tile(aStackImage, (image.shape[0],1))
+                tImage = (image-aStackImage).flatten()
+            
+                #-- Note, this could be improved by removing maskCentroid in this case, thus allowing the flattened array to be used (a larger data vector), and thus reducing the noise on the error estimation
+                
+                ##Plot
+                # import pylab as pl
+                # f = pl.figure()
+                # ax = f.add_subplot(111)
+                # im = ax.imshow(tImage)
+                # pl.colorbar(im)
+                # pl.show()
 
-            #Turn off centroid masking (as feature should be removed), subtract stacked from each realisation, and flatten for noise estimation
-            maskCentroid = None
-            aStackImage = np.tile(aStackImage, (image.shape[0],1))
-            tImage = (image-aStackImage).flatten()
-            
-            #-- Note, this could be improved by removing maskCentroid in this case, thus allowing the flattened array to be used (a larger data vector), and thus reducing the noise on the error estimation
-            
-            ##Plot
-            # import pylab as pl
-            # f = pl.figure()
-            # ax = f.add_subplot(111)
-            # im = ax.imshow(tImage)
-            # pl.colorbar(im)
-            # pl.show()
-
-            
-            
         elif(len(image.shape)==1):
             tImage = image.reshape(modelParams['stamp_size'])
             maskCentroid = modelParams['centroid']
         else:
             raise ValueError("find_ML_Estimate: calcNoise: image not of expected shape")
         modelParams['noise'] = calcNoise(tImage, maskCentroid)
-
-    print "Noise of image is (estimated): ", modelParams['noise']
-        
+    
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
@@ -245,6 +244,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
                 if(vverbose or debug):
                     print '\n Using user-defined parameter range:', bruteRange
 
+                print "Using bruteRange: ", bruteRange
                 #x0, fval, bruteGrid, bruteVal
                 bruteOut = opt.brute(get_logLikelihood, ranges = bruteRange, args = (fitParams, image, modelParams, modelLookup, 'sum'), finish = None, full_output = True)
                 x0, fval, bruteGrid, bruteVal = bruteOut
@@ -256,8 +256,19 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
                     raise RuntimeError('find_ML_Estimator - brute labelled as means of evaluating error. This is possbible, but not coded as limitation in use of bruteRange to cover the whole region where the likelihood is non-zero. When a prior is included, this could be taken to be exact, provided one knows the range where the prior has compact support, and the bruteRange reflects this.')
                 ## use scipy.integrate.trapz(bruteVal, x = bruteGrid[i], axis = i) with i looping over all parameters (ensure axis set properly...
 
+                ##Testing of error determination
+                # tErr = fisher_Error_ML(x0, fitParams, image, modelParams, modelLookup)
+                # from scipy.stats import norm
+                # rv = norm(loc = x0, scale = tErr)
+                # ##Plot this
+                # import pylab as pl
+                # f = pl.figure()
+                # ax = f.add_subplot(111)
+                # import math
+                # ax.plot(bruteGrid, np.exp(-1.*(bruteVal-np.amin(bruteVal))), bruteGrid, (np.sqrt(2*math.pi)*tErr)*rv.pdf(bruteGrid))
+                # pl.show()
+                # raw_input("Check")
                 
-
                 if(vverbose or debug):
                     print '\n preSearch has found a minimum (on a coarse grid) of:', x0
                 
@@ -382,7 +393,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
     ## Get Error on measurement. Brute error would have been constructed on the original brute force grid evaluation above.
     if(error is not None and error.lower() == 'fisher'):
-        err = fisher_Error_ML(maxima, fitParams, image, setParams, modelLookup) #Use finalised modelParams here?
+        err = fisher_Error_ML(maxima, fitParams, image, modelParams, modelLookup) #Use finalised modelParams here?
         Returned.append(err)
 
     return Returned
@@ -473,7 +484,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     #Construct log-Likelihood assuming Gaussian noise. As this will be minimised, remove the -1 preceeding
     if(vverbose):
         print 'Noise in ln-Like evaluation:', modelParams['noise']
-
+        
     keepPix = returnType.lower() == 'pix' or returnType.lower() == 'all'
 
     pixlnL = np.array([])
@@ -555,7 +566,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     ### Set up model parameters as input
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = deepcopy(setParams)
-
+    
     ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
     parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
     if(len(parameters) != len(pLabels)):
@@ -628,7 +639,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
         ##Set derivative as sum_pix(delI*derI)/sig^2 for all parameters entered
         ## ReturnTypes other than sum could be implemented by removing the sum pats of this relation, however the implementation of fprime in the minimisation routines requires the return to be a 1D array containing the gradient in each direction.
         res = (tdelI*modDer).sum(axis = -1).sum(axis = -1)
-        res /= (signModifier/abs(signModifier))*modelParams['noise']*modelParams['noise']
+        
     elif(order == 2):
         res = np.zeros((nP,nP))
         ##This could and should be sped-up using two single loops rather than a nested loop, or by defining delI and dIm*dIm in the same dimension as modDer2
@@ -637,8 +648,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
             for j in range(nP):
                 res[i,j] = (delI*modDer2[i,j] - modDer[i]*modDer[j]).sum(axis = -1).sum(axis = -1)
 
-        res /= (signModifier/abs(signModifier))*modelParams['noise']*modelParams['noise']
-
-
+    res /= (signModifier/abs(signModifier))*modelParams['noise']*modelParams['noise']
+    
     return res
     
