@@ -24,7 +24,7 @@ biasCorrect = 0
 nReal = 10000
 
 #Set up the ground truth
-SB = dict(size = 1.41, e1 = 0.1, e2 = 0.0, magnification = 1., shear = [0.,0.], flux = 1000, modelType = 'gaussian')
+SB = dict(size = 1.41, e1 = 0.1, e2 = 0.0, magnification = 1., shear = [0.,0.], flux = 1000, modelType = 'gaussian', bg = 20.)
 PSF = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0., PSF_Guass_e2 = 0.0)
 imageShape = (10,10)
 groundParams = modPro.default_ModelParameter_Dictionary(SB = SB, PSF = PSF, centroid = (np.array(imageShape)+1)/2., noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.)
@@ -54,7 +54,7 @@ def run(imageParams = None, verbose = False):
         imageParams = modPro.default_ModelParameter_Dictionary(SB = SB, PSF = PSF, centroid = (np.array(imageShape)+1)/2., noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.)
 
     if(verbose):
-        print "Ground Truth: \n"
+        print "\nGround Truth:"
         modPro.print_ModelParameters(imageParams)
     
     groundTruth = copy.deepcopy(imageParams)
@@ -103,7 +103,7 @@ def run_loopParam(imageParams = None, parLab = None, parVals = None, verbose = F
     
     ML, bias, err = [],[],[]
     for val in parVals:
-        print "Considering ", parLab , " = ", val
+        print "\n\nConsidering ", parLab , " = ", val
         
         imageParams['SB'][parLab] = val
 

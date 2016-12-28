@@ -39,6 +39,7 @@ def default_ModelParameter_Dictionary(**setters):
     --- e1
     --- e2
     --- flux
+    --- bg : Background *per pixel*
     LENSING PARAMETERS (IGNORED IN THIS ITERATION)
     --- magnification
     --- shear
@@ -48,7 +49,7 @@ def default_ModelParameter_Dictionary(**setters):
     PSFDict = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0.0, PSF_Gauss_e2 = 0.0)
 
     ## SB Declaration
-    SBDict = dict(modelType = 'gaussian', size = 1.41, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.])
+    SBDict = dict(modelType = 'gaussian', size = 1.41, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.], bg = 0.)
 
     imgshape = np.array([10, 10])
     dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict)
@@ -502,6 +503,10 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
                   boundary[1]:boundary[1]+iParams['stamp_size'][1]]
         ## Q: Could this be done earlier/quicker?
 
+        #Add a background
+        if(iParams['SB']['bg'] is not None):
+            Res += iParams['SB']['bg']
+            
         '''
         print 'Check'
         print Pixelised[2,:]
