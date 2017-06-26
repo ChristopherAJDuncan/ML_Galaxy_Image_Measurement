@@ -142,11 +142,10 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     """
 
     ''' Set up defaults '''
-
-    err = None
     
-    ##Initialise output tuple
+    ##Initialise result variables
     Returned = []
+    err = None
 
     ## Exceptions based on input objects
     if(image is None or sum(image.shape) == 0):
@@ -193,7 +192,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
                 for i in range(finalIndex):
                     aStackImage += image[i]#*np.power(-1, i)
 
-                print "Estimating noise from stack-subtracted image"
+                print "\nEstimating noise from stack-subtracted image"
                 aStackImage /= float(finalIndex)
                 tImage = (image[0]-aStackImage).reshape(modelParams['stamp_size'])
             
@@ -201,7 +200,9 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
                 maskCentroid = None
                 aStackImage = np.tile(aStackImage, (image.shape[0],1))
                 tImage = (image-aStackImage).flatten()
-            
+
+                print "--Done"
+                
                 #-- Note, this could be improved by removing maskCentroid in this case, thus allowing the flattened array to be used (a larger data vector), and thus reducing the noise on the error estimation
                 
                 ##Plot
@@ -289,6 +290,67 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
     if(searchMethod.lower() == 'simplex'):
         maxima = opt.fmin(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+    elif(searchMethod.lower() == "emcee"):
+        import emcee
+
+        if(verbose):
+            print "\n-Running emcee....."
+
+        #Define MCMC parameters. These should be passed in
+        nWalkers = 6
+        nRun = 1000
+        nBurn = 100
+
+        if(not isinstance(x0, np.ndarray)):
+            x0 = np.array(x0)
+        nDim = x0.shape[0]
+
+        print "x0: ", x0
+        
+        #Produce a new x0 for each parameter. For now, take as -1.5x0 to 1.5x0. Better to pass this in, or inform from prior range
+        p0 = np.zeros((nWalkers,nDim))
+        for i in range(x0.shape[0]):
+            p0[:,i] = np.random.uniform(-1.5*x0[i], 1.5*x0[i], nWalkers)
+
+        print "P0:", p0
+
+        sampler = emcee.EnsembleSampler(nWalkers, nDim, get_logLikelihood,  args = (fitParams, image, modelParams, modelLookup, 'sum', -1))
+
+        #Burn-in
+        if(verbose):
+            print "-Running burn-in....."
+        pos, prob, state = sampler.run_mcmc(p0, nBurn)
+        sampler.reset()
+        if(verbose):
+            print "--Finished burn-in."
+            print " Position is ", pos
+            print "with prob: ", prob
+        
+        #Run
+        if(verbose):
+            print "-Sampling....."
+        sampler.run_mcmc(pos, nRun)
+        if(verbose):
+            print "--Finished", nRun, " samples."
+
+        #Get output
+        chain = sampler.flatchain
+        pChain = sampler.flatlnprobability
+
+        maxIndex = np.argmax(pChain, axis = 0)
+        maxima = chain[maxIndex,:]
+        err = np.std(chain, axis = 0)
+
+        if(debug):
+            import pylab as pl
+            f = pl.figure()
+            for i in range(1,nDim+1):
+                ax = f.add_subplot(nDim, 1, i)
+                ax.hist(chain[:,i-1], bins = 100)
+                ax.set_title("Par: "+ fitParams[i-1])
+
+            pl.show()
+                
     elif(searchMethod.lower() == 'brent'):
         maxima = opt.fmin_brent(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
     elif(searchMethod.lower() == 'powell'):
@@ -392,14 +454,20 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
 
     ## Get Error on measurement. Brute error would have been constructed on the original brute force grid evaluation above.
-    if(error is not None and error.lower() == 'fisher'):
-        err = fisher_Error_ML(maxima, fitParams, image, modelParams, modelLookup) #Use finalised modelParams here?
+    if(error is not None):
+        if(err is not None):
+            err = err #Do nothing
+        elif(error.lower() == 'fisher'):
+            err = fisher_Error_ML(maxima, fitParams, image, modelParams, modelLookup) #Use finalised modelParams here?
+        else:
+            raise ValueError("get_ML_estimator - failed to return error, error requested, but value not found nor acceptable lable used")
         Returned.append(err)
 
+        
     return Returned
 
 
-def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None, returnType = 'sum'):
+def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None, returnType = 'sum', signModifier = 1, callCount = 0):
     import math, sys
     import model_Production as modPro
     import surface_Brightness_Profiles as SBPro
@@ -423,6 +491,8 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 
     """
 
+    callCount += 1
+    
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = deepcopy(setParams)
     
@@ -489,16 +559,17 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
 
     pixlnL = np.array([])
     lnL = 0
+    absSign = signModifier/abs(signModifier)
     if(len(image.shape) == len(model.shape)+1):
         #print "Considering sum over images", pLabels, parameters
         for i in range(image.shape[0]):
-            tpixlnL = np.power(image[i]-model,2.)
+            tpixlnL = absSign*np.power(image[i]-model,2.)
             lnL += tpixlnL.sum()
             if(keepPix):
                 pixlnL = np.append(pixlnL, tpixlnL)
     
     else:
-        tpixlnL = np.power(image-model,2.)
+        tpixlnL = absSign*np.power(image-model,2.)
         lnL += tpixlnL.sum()
         if(keepPix):
             pixlnL = np.append(pixlnL,tpixlnL)

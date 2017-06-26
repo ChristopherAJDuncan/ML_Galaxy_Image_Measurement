@@ -12,11 +12,13 @@ verbose = True
 
 output = os.path.abspath(os.path.join(os.getcwd(), "../Output/Gaussian/"))
 
-minimiseMethod = 'simplex'
+minimiseMethod = 'emcee'
 errorType = 'Fisher'
 
-fitParams = ("e1")
-initialGuess = dict(e1 = 0.11)
+loopParam = "e1"
+
+fitParams = (loopParam, "flux")
+initialGuess = dict(e1 = 0.11, flux = 9500.)
 
 biasCorrect = 0
 
@@ -24,7 +26,7 @@ biasCorrect = 0
 nReal = 10000
 
 #Set up the ground truth
-SB = dict(size = 1.41, e1 = 0.1, e2 = 0.0, magnification = 1., shear = [0.,0.], flux = 1000, modelType = 'gaussian', bg = 20.)
+SB = dict(size = 1.41, e1 = 0.0, e2 = 0.0, magnification = 1., shear = [0.,0.], flux = 100, modelType = 'gaussian', bg = 0.)
 PSF = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0., PSF_Guass_e2 = 0.0)
 imageShape = (10,10)
 groundParams = modPro.default_ModelParameter_Dictionary(SB = SB, PSF = PSF, centroid = (np.array(imageShape)+1)/2., noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.)
@@ -61,25 +63,39 @@ def run(imageParams = None, verbose = False):
 
     #Produce Realisations
     #ccdSpecs = dict(readout = 4., ADUf = 1.) #Gaussian
-    ccdSpecs = dict(qe = 0.9, charge = 0.001, readout = 1., ADUf = 1) #PGN
+    #ccdSpecs = dict(qe = 0.9, charge = 0.001, readout = 1., ADUf = 1) #PGN
+
+    ccdSpecs = dict(qe = 0.9, charge = 0.0001, readout = 1., ADUf = 1) #PGN simplified
 
     #Alternate is to use noiseDist.PN_Likelihood
-    data = proDat.produce_Realisations(imageParams, nReal, ccdSpecs, noiseDist.PN_Likelihood, os.path.join(output, "Realisations.dat"))
+    data = proDat.produce_Realisations(imageParams, nReal, ccdSpecs, noiseDist.PN_Likelihood, os.path.join(output, "Realisations.dat"), suppressOutput = True)
 
+    #Get covariance
+    # import scipy
+    # cova = scipy.cov(data[1], rowvar = False)
+    # print 'Cov shape:', cova.shape, data[1].shape
+    
     if(verbose):
-        print 'Constructed data'
-
-    print data[1].shape
+        print 'Constructed data with shape:'
+        print data[1].shape
 
     if(plotImage):
         import pylab as pl
         f = pl.figure()
         ax = f.add_subplot(111)
-        ax.imshow(data[1][0,:].reshape(imageShape))
-        pl.show()
+        
+        import mypylib.plot.images as myim
+        myim.imageShow(ax, data[0][:].reshape(imageParams['stamp_size']))
+        #myim.imageShow(ax, data[0][0,:].reshape(imageParams['stamp_size']))
+        
 
+        #ax = f.add_subplot(212)
+        #ax.imshow(cova)
+        
+        pl.show()
+    
     #Maximise Likelihood for data
-    MaxL = ML.find_ML_Estimator(data[1], fitParams = fitParams, error = errorType, calcNoise = ML.estimate_Noise, setParams = imageParams.copy(), **initialGuess)
+    MaxL = ML.find_ML_Estimator(data[1], fitParams = fitParams, error = errorType, calcNoise = ML.estimate_Noise, setParams = imageParams.copy(), searchMethod = minimiseMethod, **initialGuess)
 
     bias = (MaxL[0]-modPro.unpack_Dictionary(groundTruth, requested_keys = fitParams))[0]
 
@@ -88,6 +104,19 @@ def run(imageParams = None, verbose = False):
         print "Bias is :", bias, " +- ", MaxL[1][0]
         print "With significance ", abs(bias)/MaxL[1][0]
 
+    
+    #Maximise Likelihood for data
+    MaxL = ML.find_ML_Estimator(data[1], fitParams = fitParams, error = None, calcNoise = ML.estimate_Noise, setParams = imageParams.copy(), searchMethod = 'simplex', **initialGuess)
+
+    bias = (MaxL[0]-modPro.unpack_Dictionary(groundTruth, requested_keys = fitParams))[0]
+
+    if(verbose):
+        print "Maximum Likelihood found to be: " , MaxL[0][0], " +- ", MaxL[1][0]
+        print "Bias is :", bias, " +- ", MaxL[1][0]
+        print "With significance ", abs(bias)/MaxL[1][0]
+
+    raw_input("Check difference")
+        
     return MaxL[0][0], bias, MaxL[1][0]
 
 def run_loopParam(imageParams = None, parLab = None, parVals = None, verbose = False):
@@ -144,7 +173,7 @@ def run_loopParam(imageParams = None, parLab = None, parVals = None, verbose = F
     
 if __name__ == "__main__":
     IO.initialise_Directory(output)
-
-    run_loopParam(groundParams, "e1", np.arange(-0.9, 1., 0.1), verbose)
+    
+    run_loopParam(groundParams, loopParam, np.arange(-0.5, -0.4, 0.1), verbose)
     
     #run(groundParams, verbose)

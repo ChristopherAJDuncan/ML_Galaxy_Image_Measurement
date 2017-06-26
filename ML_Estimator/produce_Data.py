@@ -18,7 +18,7 @@ imageParams = modPro.default_ModelParameter_Dictionary(SB = dict(size = 1.41, e1
                                                        centroid = (np.array(imageShape)+1)/2., noise = 10., SNR = 50., stamp_size = imageShape, pixel_scale = 1.,\
                                                        PSF = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0., PSF_Gauss_e2 = 0.0))
 
-def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None, noiseFunc = nDist.PN_Likelihood, outputPrefix = os.path.join(Output,"Realisations.dat")): 
+def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None, noiseFunc = nDist.PN_Likelihood, outputPrefix = os.path.join(Output,"Realisations.dat"), suppressOutput = False): 
     #Single Run - Derivative
     print 'Running Data Production'
     
@@ -26,24 +26,26 @@ def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None, noiseFunc =
     image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
     
     #Start outputting. First line is always the noise free model
-    handle = IO.initialise_Output(outputPrefix, mode = "w")
-    handle.write("# Flux:"+str(imageParams['SB']['flux'])+" e1:"+str(imageParams['SB']['e1'])+" e2:"+str(imageParams['SB']['e2'])+
-                 " size:"+str(imageParams['SB']['size'])+" stamp_size:"+str(imageParams['stamp_size'])+" centroid:"+str(imageParams['centroid']) +"\n")
-    handle.write("# First line is noise-free image \n")
+    if(not suppressOutput):
+        handle = IO.initialise_Output(outputPrefix, mode = "w")
+        handle.write("# Flux:"+str(imageParams['SB']['flux'])+" e1:"+str(imageParams['SB']['e1'])+" e2:"+str(imageParams['SB']['e2'])+
+                     " size:"+str(imageParams['SB']['size'])+" stamp_size:"+str(imageParams['stamp_size'])+" centroid:"+str(imageParams['centroid']) +"\n")
+        handle.write("# First line is noise-free image \n")
     
-    #Produce noise realisations by sampling from the correct distribution
-    
-
     #--Flatten image - fImage goes over all pixels of a single underlying image (truth)
     fImage = image.flatten()
+    #-- Output noise free image
+    if(not suppressOutput):
+        np.savetxt(handle, fImage.reshape(1,fImage.shape[0]))
+
+    print 'Maximum of ground image occurs at ', np.argmax(image)
     
-    np.savetxt(handle, fImage.reshape(1,fImage.shape[0]))
-    
-#-Define CCD specs
+    #-Define CCD specs
     if(ccdSpecs is None):
         print "----- Using Default ccd Specs"
         ccdSpecs = dict(qe = 0.9, charge = 0.001, readout = 1., ADUf = 1)
-    
+        
+    #Produce noise realisations by sampling from the correct distribution
     nImage = np.zeros((nReal,fImage.shape[0]))
     for i in range(fImage.shape[0]):
         counts, pdf = noiseFunc(fImage[i], ccdSpecs)
@@ -59,11 +61,12 @@ def produce_Realisations(imageParams, nReal = 1000, ccdSpecs = None, noiseFunc =
             exit()
 
     #Output to file
-    for i in range(nReal):
-        np.savetxt(handle, nImage[i].reshape(1,nImage.shape[1]))
-
+    if(not suppressOutput):
+        for i in range(nReal):
+            np.savetxt(handle, nImage[i].reshape(1,nImage.shape[1]))
+        handle.close()
+            
     print "Finished sampling"
-    handle.close()
 
     return fImage, nImage
 
