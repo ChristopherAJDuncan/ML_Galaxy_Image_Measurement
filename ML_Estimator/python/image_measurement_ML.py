@@ -1,10 +1,13 @@
 """
 Author: cajd
 Touch Date: 14th May 2015
-Purpose: Contains the code to implement a maximum-likelihood based estimator for image model parameters. Contains routines to evaluate the log-Likelihood, and it's derivatives, as well as supplementary definitions such as mimimisation routines (if applicable), noise estimation from an image, and error estiamtion (e.g. Fisher Matrices).
+Purpose: Contains the code to implement a maximum-likelihood based estimator for image model parameters. 
+Contains routines to evaluate the log-Likelihood, and it's derivatives, as well as supplementary definitions 
+such as mimimisation routines (if applicable), noise estimation from an image, and error estiamtion (e.g. Fisher Matrices).
 
 To Do:
-(17Sept2015):: Add ability to apply a prior to the likelihood (in which case the method maximises a *Posterior* rather than a likelihood. In this case, lnL -> lnP + lnL and d^n(lnL) -> d^n(lnP) + d^n (lnL)
+(17Sept2015):: Add ability to apply a prior to the likelihood (in which case the method maximises a *Posterior* 
+rather than a likelihood. In this case, lnL -> lnP + lnL and d^n(lnL) -> d^n(lnP) + d^n (lnL)
 
 """
 import numpy as np
@@ -17,15 +20,22 @@ debug = False
 
 def estimate_Noise(image, maskCentroid = None):
     """
-    Routine which takes in an image and estimates the noise, needed to accurately calculate the expected bias on profile measurements. Where a centroid value is passed, the code uses a form of `curve of growth` to estiamte the noise, by increasing the size of a cricular mask steadily by one pixel around that centroid and looking for convergence (defined here as the point where the difference between loops is minimised), otherwise the full image is used.
+    Routine which takes in an image and estimates the noise, needed to accurately calculate the expected bias on
+     profile measurements. Where a centroid value is passed, the code uses a form of `curve of growth` to estiamte 
+     the noise, by increasing the size of a cricular mask steadily by one pixel around that centroid and looking for
+      convergence (defined here as the point where the difference between loops is minimised), otherwise the full image is used.
 
-    *** Noise is known to be too large when the postage stamps size is not large enough, so that the model makes up a significant percentage of the image. One may therefore expect the noise to be too large for small PS sizes. ***
+    *** Noise is known to be too large when the postage stamps size is not large enough, so that the model 
+    makes up a significant percentage of the image. One may therefore expect the noise to be too large for small PS sizes. ***
 
     Agrees well with GALSIM noise var on all SNR provided masCentroid is accurately placed on source centre (tested for ellipticity = 0.)
 
     Requires:
     -- image: Image of source (2-dimensional numpy array)
-    -- maskCentroid: center of mask - used to iteritively mask out source to get an accurate estimate of the background noise after removing the source. If None, then the noise is returned as the standard deviation of the image without masking applied. If not None, then the noise is minimum of the difference between successive runs where the mask is increased by one pixel each side of the centre as passed in.
+    -- maskCentroid: center of mask - used to iteritively mask out source to get an accurate estimate 
+    of the background noise after removing the source. If None, then the noise is returned as the standard deviation of the image without 
+    masking applied. If not None, then the noise is minimum of the difference between successive runs where the mask is increased 
+    by one pixel each side of the centre as passed in.
 
     Returns:
     -- result: Scalar giving the standard deviation of the pixel in the input image, after masking (if appropriate).
@@ -72,11 +82,16 @@ def estimate_Noise(image, maskCentroid = None):
 def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     from copy import deepcopy
     """
-    Calculates the marginalised fisher error on the set of fitParams (tuple) around maximum-likelihood point ML. As the log-Likelihood depends on the image, the images must be supplied, along with a model dictionary giving the fixed model parameters (setParams), and the modelLookup (this can be None is no lookup is to be used). The model fit is therefore constructed by setParams+{fitParams:ML}.
+    Calculates the marginalised fisher error on the set of fitParams (tuple) around maximum-likelihood point ML.
+    As the log-Likelihood depends on the image, the images must be supplied, along with a model dictionary giving
+    the fixed model parameters (setParams), and the modelLookup (this can be None is no lookup is to be used). 
+    The model fit is therefore constructed by setParams+{fitParams:ML}.
 
-    Note: As the Fisher Matrix assumes that the likelihood is Gaussian around the ML point (in *parameter* space), this estimate is likely to be inaccurate for parameters which are non-linearly related to the observed image value at any point.
+    Note: As the Fisher Matrix assumes that the likelihood is Gaussian around the ML point (in *parameter* space), 
+    this estimate is likely to be inaccurate for parameters which are non-linearly related to the observed image value at any point.
 
-    Uses the fact that for a Gaussian likelihood (on pixel values, not parameters): ddlnP/(dtheta_i dtheta_j) = 1/sigma^2*sum_pix[delI*model_,ij - model_,i*model_,j], where `,i` labels d()/dtheta_i.
+    Uses the fact that for a Gaussian likelihood (on pixel values, not parameters):
+     ddlnP/(dtheta_i dtheta_j) = 1/sigma^2*sum_pix[delI*model_,ij - model_,i*model_,j], where `,i` labels d()/dtheta_i.
 
     Requires:
     ML: Computed ML point, entered as 1D list/tuple/numpy array
@@ -86,7 +101,8 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     modelLookup: modelLookup table as defined in find_ML_Estimator. Can be None if no lookup is used.
 
     Returns:
-    -- err: Tuple containing marginalised Fisher error for all input parameters (in each case all other parameters are considered fixed to ML or input values).
+    -- err: Tuple containing marginalised Fisher error for all input parameters 
+    (in each case all other parameters are considered fixed to ML or input values).
 
     Tests:
     -- Value of marginalised error is verified to be comparable to the variance over 5x10^5 simulated images for e1, e2 as free parameters without a prior.
@@ -97,7 +113,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
     ddlnL = -1.*ddlnL ##This is now the Fisher Matrix
 
-    Fin = np.linalg.inv(ddlnL)
+    Fin = np.linalg.inv(ddlnL) # Inverts Fisher matrix which is the covarience matrix
 
     return np.sqrt(np.diag(Fin))
     
@@ -109,36 +125,75 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     import measure_Bias as mBias
     from generalManipulation import makeIterableList
     """
-    MAIN ROUTINE FOR THIS MODULE. Takes in an image (at minimum) and a set of values which defines the model parameters (fit and those which are free to vary), and returns the parameter values at which the log-Likelihood is minimised (or Likelihood is maximised). Can correct for first order noise bias (if biasCorrect != 0), and an estimate of the error (if error is equal to a set of pre-defined values [see below]).
+    MAIN ROUTINE FOR THIS MODULE. Takes in an image (at minimum) and a set of values which defines the model 
+    parameters (fit and those which are free to vary), and returns the parameter values at which the log-Likelihood 
+    is minimised (or Likelihood is maximised). Can correct for first order noise bias (if biasCorrect != 0), and an estimate of the error 
+    (if error is equal to a set of pre-defined values [see below]).
     
     Requires:
     -- image: 2d array of pixelised image
-    -- fitParams: tuple of strings which define the model parameters which are free to vary (those which will be fit). These must satisfy the definition of model parameters as set out in the default model dictionary. If None, then e1, e2 and T are fit (this could be made stricter by removing the default None initialisation, thereby requiring that a set of parameters to be fit is passed in).
+
+    -- fitParams: tuple of strings which define the model parameters which are free to vary (those which will be fit). 
+       These must satisfy the definition of model parameters as set out in the default model dictionary. If None, 
+       then e1, e2 and T are fit (this could be made stricter by removing the default None initialisation, thereby 
+       requiring that a set of parameters to be fit is passed in).
+
     -- outputHandle: handle of the output file. **Result is always appended**. If not passed in, then result is not output. Output is in ASCII form.
-    -- setParams: Default model dictionary containing fixed parameters which describes the model being fixed. One part of a two part approach to setting the full model parameter dictionary, along with iParams. If None, then default model dictionary is taken.
-    -- modelLookup: Dictionary containing lookup table for pixelised model images, as defined in model_Production module. If None, no lookup is used, and the model is re-evalauted for each change in model parameters.
+
+    -- setParams: Default model dictionary containing fixed parameters which describes the model being fixed. 
+       One part of a two part approach to setting the full model parameter dictionary, along with iParams. If None, then default model dictionary is taken.
+    -- modelLookup: Dictionary containing lookup table for pixelised model images, as defined in model_Production module.
+       If None, no lookup is used, and the model is re-evalauted for each change in model parameters.
     -- searchMethod: String detailing which form of minimisation to use. Accepted values are:
     ___ simplex, brent, powell, cg, bfgs, l_bfgs_b, ncg (as defined in SciPy documentation)
-    -- preSearchMethod: String detailing initial search over parameter space to find global Minimium, used as an initial guess for refinement with searchMethod. If None, initial guess is set to default passed in by the combination of setParams and iParams. If not None, then code will run an initial, coarse search over the parameter space to attempt to find the global mimima. By default this is switched off. Where preSearchMethod == grid or brute, the a grid based search is used. Where this is used, a range must either be entered by the user through bruteRange, or it is taken from the entered prior information. NOTE: This still uses a typically coarse grid, therefore if the range is too wide then it is possible that the code may still find a local mimimum if this exists within one grid point interval of the global miminum.
+
+    -- preSearchMethod: String detailing initial search over parameter space to find global Minimium, used as an initial 
+       guess for refinement with searchMethod. If None, initial guess is set to default passed in by the combination of
+       setParams and iParams. If not None, then code will run an initial, coarse search over the parameter space to attempt
+       to find the global mimima. By default this is switched off. Where preSearchMethod == grid or brute, the a grid based search 
+       is used. Where this is used, a range must either be entered by the user through bruteRange, or it is taken from the entered 
+       prior information. NOTE: This still uses a typically coarse grid, therefore if the range is too wide then it is possible 
+       that the code may still find a local mimimum if this exists within one grid point interval of the global miminum.
+
     -- Prior: NOT USED YET. Skeleton to allow for a parameter prior structure to be passed in
-    -- bruteRange: [nPar, 2] sized tuple setting the range in which the initial preSearchMethod is evaluated, if this is done using a grid or brute method (both equivalent), where nPar is the number of free model parameters being fit. THIS DOES NOT CONSTITUTE A PRIOR, as the refinement may still find an ML value outside this range, however where the global maximum occurs outside this range the returned ML value may be expected to be biased.
-    -- biasCorrect: integer, states what level of noise bias to correct the estimate to. Only 1st order correction (biasCorrect == 1) is supported. If biasCorrect == 0, the uncorrected estimate (and error if applicable) are output. If biasCorrect > 0, the uncorrected, corrected and error (if applicable) are output. When used, it is important that *the entered model parameter dictionary contains an accurate measure of the pixel noise of appropriate signal--to--noise, as the analytic bias scales according to both*. Noise can be estimate using estimate_Noise() before entry.
+
+    -- bruteRange: [nPar, 2] sized tuple setting the range in which the initial preSearchMethod is evaluated, if this is done 
+       using a grid or brute method (both equivalent), where nPar is the number of free model parameters being fit. 
+       THIS DOES NOT CONSTITUTE A PRIOR, as the refinement may still find an ML value outside this range, 
+       however where the global maximum occurs outside this range the returned ML value may be expected to be biased.
+
+    -- biasCorrect: integer, states what level of noise bias to correct the estimate to. 
+       Only 1st order correction (biasCorrect == 1) is supported. If biasCorrect == 0, the uncorrected estimate 
+       (and error if applicable) are output. If biasCorrect > 0, the uncorrected, corrected and error (if applicable) are output. 
+       When used, it is important that *the entered model parameter dictionary contains an accurate measure of the pixel noise 
+       of appropriate signal--to--noise, as the analytic bias scales according to both*. Noise can be estimate using estimate_Noise() before entry.
+
     -- bcOutputhandle: As outputHandle, except for the bias corrected estimator.
+
     -- error: String detailing error estiamte to output. Supported values are:
     ___ fisher: Marginalised fisher error for each parameter around the ML point. See docstring for fisher_Error_ML().
-    ___ brute: UNSUPPORTED, however an error defined on the parameter likelihood itself can be derived if the preSearchMethod and bruteRange is defined such that the Likelihood has *compact support*. If not, then this would be inaccurate (underestimated). Therefore coding for this is deferred until the application of a prior is developed, as use of a prior ensures compact support by default.
-    -- iParams: set of optional arguments which, together with setParams, defines the intial model dictionary. Allows parameter values to be input individually on call, and is particularly useful for setting initial guesses where preSearchMethod == None.
+    ___ brute: UNSUPPORTED, however an error defined on the parameter likelihood itself can be derived if the preSearchMethod and 
+        bruteRange is defined such that the Likelihood has *compact support*. If not, then this would be inaccurate (underestimated). 
+        Therefore coding for this is deferred until the application of a prior is developed, as use of a prior ensures compact support by default.
+
+    -- iParams: set of optional arguments which, together with setParams, defines the intial model dictionary. 
+       Allows parameter values to be input individually on call, and is particularly useful for setting initial guesses where preSearchMethod == None.
     
     
     Model Parameter entry: Model Parameters can be entered using two methods
-    ___ setParams: Full Dictionary of initial guess/fixed value for set of parameters. If None, this is set to default set. May not be complete: if not, then model parameters set to default as given in default_ModelParameter_Dictionary()
-    ___iParams: generic input which allows model parameters to be set individually. Keys not set are set to default as given by default_ModelParameter_Dictionary(). Where an iParams key is included in the default dictionary, or setParams, it will be updated to this value (**therefore iParams values have preferrence**). If key not present in default is entered, it is ignored
-    ___ The initial choice of model parameters (including intial guesses for the minimisation routine where preSearchMethod == False) is thus set as setParams+{iParams}
+    ___ setParams: Full Dictionary of initial guess/fixed value for set of parameters. If None, this is set to default set. 
+        May not be complete: if not, then model parameters set to default as given in default_ModelParameter_Dictionary()
+    ___iParams: generic input which allows model parameters to be set individually. Keys not set are set to default as given by 
+       default_ModelParameter_Dictionary(). Where an iParams key is included in the default dictionary, or setParams, it will be updated 
+        to this value (**therefore iParams values have preferrence**). If key not present in default is entered, it is ignored
+    ___ The initial choice of model parameters (including intial guesses for the minimisation routine where preSearchMethod == False) 
+        is thus set as setParams+{iParams}
 
 
 
     Returns:
-    Returned: tuple of length equal to fitParams. Gives ML estimator for each fit parameter, with bias corrected version (if biasCorrect != 0) and error (if applicable) aslways in that order.
+    Returned: tuple of length equal to fitParams. Gives ML estimator for each fit parameter, with bias corrected version 
+    (if biasCorrect != 0) and error (if applicable) aslways in that order.
     """
 
     ''' Set up defaults '''
@@ -405,15 +460,18 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     import surface_Brightness_Profiles as SBPro
     import generalManipulation
     """
-    Returns the (-1.)*log-Likelihood as a Gaussian of lnL propto (I-Im)^2/sigma_n, where Im is image defined by dictionary ``modelParams'', and I is image being analysed, and sigma_n the pixel noise.
+    Returns the (-1.)*log-Likelihood as a Gaussian of lnL propto (I-Im)^2/sigma_n, where Im is image defined by dictionary ``modelParams'', 
+    and I is image being analysed, and sigma_n the pixel noise.
     Minimisiation routine should be directed to this function.
 
     Requires:
     parameters: flattened array of parameter values for free parameters (allows for external program to set variation in these params)
-    pLabels: string tuple of length `parameters`, which is used to identify the parameters being varied. These labels should satisfy the modelParameter dictionary keys using in setting up the model.
+    pLabels: string tuple of length `parameters`, which is used to identify the parameters being varied. These labels should 
+    satisfy the modelParameter dictionary keys using in setting up the model.
     image: 2d <ndarray> of pixelised image.
     setParams: dictionary of fixed model parameters which sets the model SB profile being fit.
-    modelLookup: An instance of the model lookup table, as set in model_Production module. If None, the the pixelised model image is re-evaluated for each change in parameters.
+    modelLookup: An instance of the model lookup table, as set in model_Production module. If None, the the pixelised model image is 
+    re-evaluated for each change in parameters.
     returnType (default sum):
     ---`sum`: Total log-likelihood, summing over all pixels
     ---`pix`: log-likelihood evaluated per pixel. Returns ndarray of the same shape as the input image
@@ -525,30 +583,40 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     import model_Production as modPro
     from surface_Brightness_Profiles import gaussian_SBProfile_CXX
     '''
-    Returns the analytic derivative of the Gaussian log-Likelihood (ignoring parameter-independent prefactor whose derivative is zero) for parameters labelled by pLabels.
+    Returns the analytic derivative of the Gaussian log-Likelihood (ignoring parameter-independent prefactor whose derivative is zero) 
+    for parameters labelled by pLabels.
     Uses analytic derivative of the pixelised model as given in differentiate_Pixelised_Model_Analytic routine of model_Production routine.
 
     *** Note: `noise` as defined in set params must the noise_std, and must accurately describe the noise properties of the image. ***
 
     Requires:
     parameters: flattened array of parameter values to vary (allows for external program to set variation in these params)
-    pLabels: tuple of length `parameters`, which is used to identify the parameters being varied. These labels should satisfy the modelParameter dictionary keys using in setting up the model
+    pLabels: tuple of length `parameters`, which is used to identify the parameters being varied. These labels should satisfy the modelParameter 
+    dictionary keys using in setting up the model
     image: 2d <ndarray> of pixelised image
     setParams: dictionary of fixed model parameters which sets the model SB profile being fit.
     modelLookup: An instance of the model lookup table, as set in model_Production module
-    returnType: IGNORED, but included so that this method mimic the call fingerprint of the log-Likelihood evaluation routine if used as part of a pre-fab minimisation routine.
-    order: sets the order to which derivatives are taken. If order == 1, the return is a tuple (ndarray) of length len(parameters), which contains the first derivatives of all parameters. If order == 2, the retrun is a two-dimensional ndarray, where each element i,j gives the sendon derivative wrt parameter i and parameter j. Order >= 3 or <= 0 are not supported.
-    signModifier: default -1. Result is multiplied by abs(signModifier)/signModifier, to change the sing of the output. This is required as the lnL routine actually returns -lnL = chi^2 where a minimisation routine is used. Thus, where the minimisation uses first derivatives, the signModifier should be postive, whilst for other applications (such as the fisher error) on requires the derivative of lnL, and so sign modifier must be negative. The absolute value of signModifier is unimportant.
+    returnType: IGNORED, but included so that this method mimic the call fingerprint of the log-Likelihood evaluation routine if used as part of 
+    a pre-fab minimisation routine.
+    order: sets the order to which derivatives are taken. If order == 1, the return is a tuple (ndarray) of length len(parameters), which contains
+    the first derivatives of all parameters. If order == 2, the return is a two-dimensional ndarray, where each element i,j gives the second derivative
+    wrt parameter i and parameter j. Order >= 3 or <= 0 are not supported.
+    signModifier: default -1. Result is multiplied by abs(signModifier)/signModifier, to change the sign of the output. This is required as the lnL routine 
+    actually returns -lnL = chi^2 where a minimisation routine is used. Thus, where the minimisation uses first derivatives, the signModifier should be postive, 
+    whilst for other applications (such as the fisher error) on requires the derivative of lnL, and so sign modifier must be negative. 
+    The absolute value of signModifier is unimportant.
 
     Returns:
     [dlnL/dbeta], repeated for all beta in order <1D ndarray>: derivative of -1*log_likelihood evaulated at entered model parameters if order == 1
-    [[dlnL/dbeta_i dbeta_j]], repeated for all beta in order <2D ndarray>: second derivative of -1*log_likelihood evaulated at entered model parameters if order == 1
+    [[dlnL/dbeta_i dbeta_j]], repeated for all beta in order <2D ndarray>: second derivative of -1*log_likelihood evaulated at entered model 
+    parameters if order == 1
 
     Possible Extensions:
-    -- In calculating second order derivatives, a nested loop is used. This is likely to be slow, and as this is used in producing fisher errors (and thus done every run-time), then this cold be a bottle-neck on the measurement of the ML point where errors are used
+    -- In calculating second order derivatives, a nested loop is used. This is likely to be slow, and as this is used in producing fisher errors 
+    (and thus done every run-time), then this could be a bottle-neck on the measurement of the ML point where errors are used
 
     Tests:
-    -- Fisher error agrees wel with simulated output for error.
+    -- Fisher error agrees well with simulated output for error.
     '''
 
     #raise ValueError("differentiate_logLikelihood_Gaussian_Analytic: This has been disabled as Weave is not behaving. Further modifications require that model, and derivatives are flattened to mimic that requirement that image is also flattened, and an extension to multiple images (this should occur naturally if model and derivatives are repeated to mimic multiple images")
