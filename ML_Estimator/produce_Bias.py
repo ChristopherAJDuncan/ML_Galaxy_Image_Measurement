@@ -138,18 +138,18 @@ def bias_bySNR():
     '''
     print 'Producing Bias by SNR ratio'
 
-    nRealisation = 10000000 ##This labels the maximum number of iterations
+    nRealisation = 10000000 
     percentError = 1
 
     global imageParams    
     modPro.set_modelParameter(imageParams, fitParamsLabels, fitParamsValues)
 
     ##Get NoiseFree Image
-    noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
+    noiseFreeImage, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
 
     modelLookup = None
     if(len(fitParamsLabels) <= 2 and useLookup):
-        modelLookup =  modPro.get_Model_Lookup(imageParams, fitParamsLabels, lookupRange, lookupWidth, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_Weave)
+        modelLookup =  modPro.get_Model_Lookup(imageParams, fitParamsLabels, lookupRange, lookupWidth, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
         print 'Created model lookup table'
 
 
@@ -189,6 +189,8 @@ def bias_bySNR():
 
         MaxL = np.zeros((nRealisation, len(fitParamsLabels))); BCMaxL = np.zeros(MaxL.shape); MaxLErr = np.zeros(MaxL.shape)
         for real in range(nRealisation):
+            ### Produce a data set for the realisations
+            
             ## This version uses GALSIM default
             #image, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G')
 
@@ -198,7 +200,7 @@ def bias_bySNR():
             #modPro.get_Pixelised_Model_wrapFunction(0., imageParams, noiseType = 'G', outputImage = False, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
 
             ## Entirely user-defined
-            image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = SBPro.gaussian_SBProfile_Weave, inputImage = noiseFreeImage)
+            image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = 'G', sbProfileFunc = SBPro.gaussian_SBProfile_CXX, inputImage = noiseFreeImage)
 
             #MLEx = ML.find_ML_Estimator(image, modelLookup = None, fitParams = fittedParameters.keys(),  outputHandle = None, setParams = imageParams, e1 = 0.35) ##Needs edited to remove information on e1 (passed in for now) - This should only ever be set to the parameters being fit
 
