@@ -10,6 +10,8 @@ To Do:
 rather than a likelihood. In this case, lnL -> lnP + lnL and d^n(lnL) -> d^n(lnP) + d^n (lnL)
 
 """
+from matplotlib.pyplot import *
+
 import numpy as np
 import os
 from copy import deepcopy
@@ -107,18 +109,25 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     Tests:
     -- Value of marginalised error is verified to be comparable to the variance over 5x10^5 simulated images for e1, e2 as free parameters without a prior.
     """
-    
     parameters = deepcopy(ML); pLabels = deepcopy(fitParams)
+    if (np.shape(image)[1])==1:
+        ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
+        ddlnL = -1.*ddlnL ##This is now the Fisher Matrix
+    else:
+        ddlnL = 0
+        for i in range((np.shape(image))[1]):
+            image_to_use = np.zeros((np.shape(image))[0])
+            for j in range(900): # turns coloumn vector to row vector
+                image_to_use[j] = image[j,i]
+            ddlnL -= differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image_to_use, setParams['Realization_'+str(i)]['Gal_'+str(0)], modelLookup = modelLookup, order = 2, signModifier = 1.)
 
-    ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
-    ddlnL = -1.*ddlnL ##This is now the Fisher Matrix
 
     Fin = np.linalg.inv(ddlnL) # Inverts Fisher matrix which is the covarience matrix
 
     return np.sqrt(np.diag(Fin))
     
 ##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
-def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, calcNoise = None, bcoutputHandle = None, error = 'Fisher', **iParams):
+def find_ML_Estimator(image,fitParams,outputHandle = None, setParams = None, galaxy_centriod = None, second_gal_param = None, secondFitParams = None,modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, calcNoise = None, bcoutputHandle = None, error = 'Fisher', **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
     from surface_Brightness_Profiles import gaussian_SBProfile_CXX
@@ -142,6 +151,13 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
     -- setParams: Default model dictionary containing fixed parameters which describes the model being fixed. 
        One part of a two part approach to setting the full model parameter dictionary, along with iParams. If None, then default model dictionary is taken.
+    -- galaxy_centriod: Allows fitted galaxy's centriod not to be at the centre of the postage stamp, takes a 1x2 numpy array as coords. If galaxy_centriod = None
+       assumes the centriod is at the centre of the postage stamp.
+    -- second_gal_param: Dictionary containing the parameters specifying the secondary galaxies' parameters using the standard format. Galaxy keys should be 'Sec_Gal_1', 
+       'Sec_Gal_2' etc.
+    -- secondFitParams: tuple of strings that define which parameters want te be fitted for secondary galaxies. The must satisfy the standard dictionary definitions. 
+       All strings entered will be fitted for all galaxies. NOTE centriod has to be entered as last in the tuple.
+    -- fit_secondary_area: Tells code to fit the area of all secondary galaxies, input are 'y', yes, or 'n', no. 
     -- modelLookup: Dictionary containing lookup table for pixelised model images, as defined in model_Production module.
        If None, no lookup is used, and the model is re-evalauted for each change in model parameters.
     -- searchMethod: String detailing which form of minimisation to use. Accepted values are:
@@ -193,12 +209,22 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
     Returns:
     Returned: tuple of length equal to fitParams. Gives ML estimator for each fit parameter, with bias corrected version 
-    (if biasCorrect != 0) and error (if applicable) aslways in that order.
+    (if biasCorrect != 0) and error (if applicable) always in that order. If secondFitParams != None the output is given in order of galaxies with the position of the centoids
+    given at the end of the out put in pairs for each galaxy,
+    ie fitParams = ('size',), secondFitParams = ('size', 'e1',) and # secondary galaxies =2 then the ML estimator arrary is [size Primary, size Secondary 1,
+    e1 Secondary 1, size Secondary 2, e1 Secondary 2]. NOTE there is no error on ML values for secondary galaxies
     """
 
     ''' Set up defaults '''
     
+    #print fitParams
+
     ##Initialise result variables
+    import math, sys
+    import model_Production as modPro
+    import surface_Brightness_Profiles as SBPro
+    import generalManipulation
+
     Returned = []
     err = None
 
@@ -209,20 +235,48 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     if(len(fitParams) > 2 and modelLookup is not None and modelLookup['useLookup']):
         raise RuntimeError('find_ML_Estimator - Model Lookup is not supported for more than double parameter fits')
 
+
+    ## Finds number of secondary galaxies
+    if second_gal_param == None:
+        numbGalaxies = 0
+    else:
+        numbGalaxies = len(second_gal_param)
+
+    if (verbose or debug):
+        print "The number of secondary galaxies is ", numbGalaxies
+
+    ## Check to make sure that if secondary areas are being fitted data the dicts exist
+        if secondFitParams is not None and second_gal_param is None:
+            raise RuntimeError('No secondary galaxies found')
+
+
     ##Set up initial params, which sets the intial guess or fixed value for the parameters which defines the model
     ##This line sets up the keywords that are accepted by the routine
     ## pixle_Scale and size should be in arsec/pixel and arcsec respectively. If pixel_scale = 1., then size can be interpreted as size in pixels
     ## centroid should be set to the center of the image, here assumed to be the middle pixel
 
-    if(setParams is None):
-        print "Setting parameters to default"
+    if(setParams is None and galaxy_centriod is None):
+        #print "Setting parameters to default"
         initialParams = modPro.default_ModelParameter_Dictionary()
+    elif setParams is None and galaxy_centriod is not None: # Need different case depending on if setParams or galxy_centriod is None
+        #print "Updating initial parameters with set Params"
+        initialParams = modPro.default_ModelParameter_Dictionary()
+        initialParams['centroid'] = galaxy_centriod
+        modPro.update_Dictionary(initialParams, initialParams)
+    elif setParams is not None and galaxy_centriod is None:
+        #print "Updating initial parameters with set Params"
+        initialParams = modPro.default_ModelParameter_Dictionary()
+        modPro.update_Dictionary(initialParams, setParams)        
     else:
-        print "Updating initial parameters with set Params"
+        #print "Updating initial parameters with set Params"
         initialParams = modPro.default_ModelParameter_Dictionary()
+        initialParams['centroid'] = galaxy_centriod
         modPro.update_Dictionary(initialParams, setParams)
         ## Deprecated initialParams.update(setParams)
-        
+
+    #if iParams is not None:
+    #    iParams = iParams.values()   
+    #    iParams = iParams[0] 
     modPro.set_modelParameter(initialParams, iParams.keys(), iParams.values())
     
     ## Define modelParams
@@ -278,7 +332,23 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     ####### Search lnL for minimum
     #Construct initial guess for free parameters by removing them from dictionary
     x0 = modPro.unpack_Dictionary(modelParams, requested_keys = fitParams)
+    
+    if numbGalaxies !=0 and secondFitParams is not None: ## This could probably be cleared up
 
+        if 'centroid' in secondFitParams:
+            for i in range(1,numbGalaxies+1):
+                for j in range(len(secondFitParams)-1):
+                    x0.append(second_gal_param["Sec_Gal_"+str(i)]["SB"][secondFitParams[j]])  
+            for i in range(1,numbGalaxies+1):
+                x0.append(second_gal_param["Sec_Gal_"+str(i)]['centroid'][0])  
+                x0.append(second_gal_param["Sec_Gal_"+str(i)]['centroid'][1]) 
+
+        else: 
+            for i in range(1,numbGalaxies+1):
+                for j in range(len(secondFitParams)): 
+                    print secondFitParams[j]
+                    x0.append(second_gal_param["Sec_Gal_"+str(i)]["SB"][secondFitParams[j]])
+    
     ###### Sanity check image dimensions compared to model parameters
     imDim = len(image.shape)
     if(imDim > 2):
@@ -287,7 +357,7 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
         raise ValueError("find_ML_Estimator: Flattened image (1D) length does not correspond to model parameter dimensions")
     elif(imDim == 2 and image.shape[1] != np.array(modelParams['stamp_size']).prod()):
         print 'Image shape: ', image.shape, ' Model shape:' , modelParams['stamp_size']
-        raise ValueError("find_ML_Estimator: image sahpe of second dimension is not consistent with expected model parameter dimension. 2D image array must contain multiple images across first dimension, and (flattened) pixels as a data vector in the second dimension: Have you remembered to flatten the image?")
+        raise ValueError("find_ML_Estimator: image shape of second dimension is not consistent with expected model parameter dimension. 2D image array must contain multiple images across first dimension, and (flattened) pixels as a data vector in the second dimension: Have you remembered to flatten the image?")
 
 
     if(preSearchMethod is not None):
@@ -344,7 +414,8 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     ##Find minimum chi^2 using scipy optimize routines
     ##version 11+ maxima = opt.minimize(get_logLikelihood, x0, args = (fitParams, image, modelParams))
     if(searchMethod.lower() == 'simplex'):
-        maxima = opt.fmin(get_logLikelihood, x0 = x0, xtol = 0.00001, args = (fitParams, image, modelParams, modelLookup, 'sum'), disp = (verbose or debug))
+        maxima = opt.fmin(get_logLikelihood, x0 = x0, xtol = 0.00001,  args = (fitParams, image, modelParams, numbGalaxies, second_gal_param, secondFitParams, modelLookup,'sum'), disp = (verbose or debug))
+
     elif(searchMethod.lower() == "emcee"):
         import emcee
 
@@ -425,6 +496,8 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     else:
         raise ValueError('find_ML_Estimator - searchMethod entered is not supported:'+str(searchMethod))
 
+    #print maxima
+
     ##Make numpy array (in the case where 1D is used and scalar is returned):
     if(len(fitParams)==1):
         maxima = np.array(makeIterableList(maxima))
@@ -485,8 +558,8 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
         print 'Maxima found to be:', maxima
 
     ##Output Result
-    if(outputHandle is not None):
-        np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0]))
+    #if(outputHandle is not None):
+    #   np.savetxt(outputHandle, np.array(maxima).reshape(1,maxima.shape[0])) # Commented out
         
     ## Bias Correct
     if(biasCorrect == 0):
@@ -509,11 +582,12 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
 
 
     ## Get Error on measurement. Brute error would have been constructed on the original brute force grid evaluation above.
+    # print "the maxima is", maxima
     if(error is not None):
         if(err is not None):
             err = err #Do nothing
         elif(error.lower() == 'fisher'):
-            err = fisher_Error_ML(maxima, fitParams, image, modelParams, modelLookup) #Use finalised modelParams here?
+            err = fisher_Error_ML(maxima[:len(fitParams)], fitParams, image, modelParams, modelLookup) #Use finalised modelParams here?
         else:
             raise ValueError("get_ML_estimator - failed to return error, error requested, but value not found nor acceptable lable used")
         Returned.append(err)
@@ -522,7 +596,10 @@ def find_ML_Estimator(image, fitParams, outputHandle = None, setParams = None, m
     return Returned
 
 
-def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None, returnType = 'sum', signModifier = 1, callCount = 0):
+
+
+
+def get_logLikelihood(parameters, pLabels, image, setParams, numbGalaxies=0, other_gal_param=None, secondFitParams=None, modelLookup = None, returnType = 'sum', signModifier = 1, callCount = 0): #  numbGalaxies, other_gal_param,
     import math, sys
     import model_Production as modPro
     import surface_Brightness_Profiles as SBPro
@@ -538,6 +615,9 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     satisfy the modelParameter dictionary keys using in setting up the model.
     image: 2d <ndarray> of pixelised image.
     setParams: dictionary of fixed model parameters which sets the model SB profile being fit.
+    numbGalaxies: Number of galaxies on postage stamp. If numbGalaxies = None then one galaxy is used
+    other_gal_param: Dictionary containing the parameters of other images on the postage stamp 
+
     modelLookup: An instance of the model lookup table, as set in model_Production module. If None, the the pixelised model image is 
     re-evaluated for each change in parameters.
     returnType (default sum):
@@ -548,22 +628,43 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     lnL <scalar>: -1*log_likelihood evaulated at entered model parameters
 
     """
-
-    callCount += 1
     
+    callCount += 1
+
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
     modelParams = deepcopy(setParams)
-    
+    secondModelParams = deepcopy(other_gal_param)
+
+    if secondFitParams is not None:
+        for i in range(numbGalaxies):
+            if 'centroid' in secondFitParams: # So that the centroid inital guesses aren't deleted yet
+                for j in range(len(secondFitParams)-1):
+                    secondModelParams["Sec_Gal_"+str(i+1)]["SB"][secondFitParams[j]] = parameters[len(pLabels)]
+                    parameters = np.delete(parameters,(len(pLabels)))               
+            else:
+                for j in range(len(secondFitParams)):
+                    secondModelParams["Sec_Gal_"+str(i+1)]["SB"][secondFitParams[j]] = parameters[len(pLabels)]
+                    parameters = np.delete(parameters,(len(pLabels))) 
+
+    if secondFitParams is not None and ('centroid' in secondFitParams): # Probably can be placed into above if loop, but I am tired
+        for i in range(numbGalaxies):
+            secondModelParams["Sec_Gal_"+str(i+1)]['centroid'][0] = parameters[len(pLabels)]
+            parameters = np.delete(parameters,(len(pLabels))) 
+            secondModelParams["Sec_Gal_"+str(i+1)]['centroid'][0] = parameters[len(pLabels)]
+            parameters = np.delete(parameters,(len(pLabels))) 
+
+
     if((setParams['stamp_size']-np.array(image.shape)).sum() > 0):
         raise RuntimeError('get_logLikelihood - stamp size passed does not match image:', str(setParams['stamp_size']), ':', str( image.shape))
     
     parameters = generalManipulation.makeIterableList(parameters); pLabels = generalManipulation.makeIterableList(pLabels)
-    if(len(parameters) != len(pLabels)):
-        raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test): parameters:', str(parameters), ' labels:', str(pLabels))
+    #if(len(parameters) != len(pLabels)):
+    #    raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test): parameters:', str(parameters), ' labels:', str(pLabels))
     
     
     ##Vary parameters which are being varied as input
     modPro.set_modelParameter(modelParams, pLabels, parameters)
+
     
     ''' Deprecated for above
     for l in range(len(pLabels)):
@@ -584,8 +685,15 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     ''' Get Model'''
     if(modelLookup is not None and modelLookup['useLookup']):
         model = np.array(modPro.return_Model_Lookup(modelLookup, parameters)[0]) #First element of this routine is the model image itself
-    else:
-        model, disc = modPro.user_get_Pixelised_Model(modelParams, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
+
+    
+    model, disc = modPro.user_get_Pixelised_Model(modelParams, noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
+
+    if numbGalaxies !=0:
+        for i in range(numbGalaxies):
+            other_gal_model, disc_to_add = modPro.user_get_Pixelised_Model(secondModelParams["Sec_Gal_"+str(i+1)], noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
+            model += other_gal_model
+
 
     ''' Model, lookup comparison '''
     '''
@@ -620,6 +728,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     absSign = signModifier/abs(signModifier)
     if(len(image.shape) == len(model.shape)+1):
         #print "Considering sum over images", pLabels, parameters
+
         for i in range(image.shape[0]):
             tpixlnL = absSign*np.power(image[i]-model,2.)
             lnL += tpixlnL.sum()
@@ -628,6 +737,7 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     
     else:
         tpixlnL = absSign*np.power(image-model,2.)
+
         lnL += tpixlnL.sum()
         if(keepPix):
             pixlnL = np.append(pixlnL,tpixlnL)
@@ -641,11 +751,180 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     ## Answer is independent of noise provided invariant across image
     #lnL2 = 0.5*( (np.power(image-model,2.)).sum()/(modelParams['noise']**2.))
     if(returnType.lower() == 'sum'):
+        print parameters, lnL
         return lnL
     elif(returnType.lower() == 'pix'):
         return pixlnL
     elif(returnType.lower() == 'all'):
         return [lnL, pixlnL]
+
+
+###-------------- Combined data set analytics ---------------------------------------------------###
+
+def combined_logLikelihood(fittingParameter, images_flattened, galDict, fitting = 'y'):
+    import math, sys
+    import model_Production as modPro
+    import surface_Brightness_Profiles as SBPro
+    import generalManipulation
+    '''
+    This routine takes a set of images with noise and a secondy galaxy adds the primary galaxy defined by the dict and gives the product of the likelihoods 
+    
+    Requires:
+
+    fittingParameters: the value of the parameter which can be varied, usally the area
+    images: a 3d numpy array with each sheet a different image
+    galDict: dictionary with each key each realization and then each galaxy an entry within that. The fitted galaxy is gal 0
+    fitting: can be either 'y' or 'n'. If 'y' then -ve of likelihood is returned so that it can be minimsed. 
+    '''
+
+    numbImages = len(galDict)
+
+    # Creates the models to compare to
+    for i in range(numbImages):
+        galDict['Realization_'+str(i)]['Gal_0']['SB']["size"] = fittingParameter
+
+
+    models = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0],galDict['Realization_0']['Gal_0']["stamp_size"][1],numbImages]) #
+
+    model_flattened = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0]*galDict['Realization_0']['Gal_0']["stamp_size"][1], numbImages])
+    for i in range(numbImages):
+        for j in range(1): ###len(galDict['Realization_'+str(i)])):### This has broken the code
+        
+            model_to_add, disc = modPro.user_get_Pixelised_Model(galDict['Realization_'+str(i)]['Gal_'+str(j)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
+            models[:,:,i] += model_to_add
+
+
+
+    model_flattened[:,i] = models[:,:,i].flatten()
+
+    # find loglikelihood of each realization and multiply together
+
+    lnL = 0
+
+    for i in range(numbImages):
+        tpixlnL = np.power(images_flattened[:,i]-model_flattened[:,i],2.)
+        lnL += tpixlnL.sum()*0.5/(galDict['Realization_'+str(i)]['Gal_0']['noise']**2.)
+    import math as m
+
+    return lnL
+    ##Model is noise free, so the noise must be seperately measured and passed in
+    ## Answer is independent of noise provided invariant across image
+    #lnL2 = 0.5*( (np.power(image-model,2.)).sum()/(modelParams['noise']**2.))
+
+ #fittingParameter, lnL    
+
+
+def combinded_min(x0,images, galParams):
+    import scipy.optimize as opt
+    '''
+    Finds ML estimator for the size of the galaxy.
+
+    Requires:
+    x0: initial guess for the size of the galaxy
+    images: numpy array with each row a different image
+    galParams:  
+    '''
+
+    mlValue = opt.fmin(combined_logLikelihood, x0 = x0, xtol=0.0001,args = (images,galParams, 'y'))
+
+    mlError = fisher_Error_ML(mlValue, ('size',), images, galParams, None)
+
+    return mlValue, mlError
+
+
+
+###--------------- Finds log likelihood given a magnification field ----------------------------###
+
+def mag_likelihood(mu, magParams,images_flattened, galDict):
+
+    import math, sys
+    import model_Production as modPro
+    import surface_Brightness_Profiles as SBPro
+    import generalManipulation
+
+    '''
+    This routine calculates the -ve of the likelihood given a value for the magnification field.
+    
+    Requires:
+
+    fittingParameters: the value of the parameter which can be varied, usally the area
+    magParams: Tell code which galaxy parameters are varied by the mag field, either size, flux or both
+    images_flattened: a numpy array with the flatteren images. Should be magnifed
+    galDict: dictionary with each key each realization and then each galaxy an entry within that. The fitted galaxy is gal 0. 
+
+    '''
+
+    print mu
+    print galDict
+
+    galDict['Realization_0']['Gal_0']['SB']["size"]*= mu
+    galDict['Realization_0']['Gal_1']['SB']["flux"]*= mu
+
+
+    galDict['Realization_1']['Gal_0']['SB']["size"]*= mu
+    galDict['Realization_1']['Gal_1']['SB']["flux"]*= mu
+    '''
+    for i in range(len(galDict)):
+        for j in range(2): # Assumes only two galaxies on postage stamp
+            if len(magParams) == 2:
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"]*= mu
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"]*= mu
+            elif len(magParams) ==1:
+                if magParams[0] == 'size':
+                    galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"] *= mu
+                elif magParams[0] == 'flux':
+                    galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"] *= mu
+                else:
+                    raise ValueError('magParams entry is not valid, can be \'flux\' or \'size\'')
+            else:
+                raise ValueError('magParams can only contain 1 or two entries ', magParams)
+    '''
+    numbImages = len(galDict)
+
+    # Creates the models to compare to
+
+    models = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0],galDict['Realization_0']['Gal_0']["stamp_size"][1],numbImages]) #
+
+    model_flattened = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0]*galDict['Realization_0']['Gal_0']["stamp_size"][1], numbImages])
+    
+    for i in range(numbImages):
+        for j in range(len(galDict['Realization_'+str(i)])):
+        
+            model_to_add, disc = modPro.user_get_Pixelised_Model(galDict['Realization_'+str(i)]['Gal_'+str(j)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
+            models[:,:,i] += model_to_add
+
+
+    model_flattened[:,i] = models[:,:,i].flatten()
+
+    # find loglikelihood of each realization and multiply together
+
+    lnL = 0
+
+    for i in range(numbImages):
+        tpixlnL = np.power(images_flattened[:,i]-model_flattened[:,i],2.)
+        lnL += tpixlnL.sum()*0.5/(galDict['Realization_'+str(i)]['Gal_0']['noise']**2.)
+    import math as m
+    print 'lnL', lnL
+    return lnL
+
+def mag_min(x0,images, unlensedParams, magParams):
+
+    import scipy.optimize as opt
+    '''
+    Finds ML estimator for the size of the galaxy.
+
+    Requires:
+    x0: initial guess for the size of the galaxy
+    images: numpy array with each row a different image
+    galParams:  
+    '''
+
+    mlValue = opt.fmin(mag_likelihood, x0 = x0, xtol = 0.01,args = (magParams, images, unlensedParams,))
+    print mlValue
+    #mlError = fisher_Error_ML(mlValue, ('magnification',), images, galParams, None)
+
+    return mlValue #, mlError
+
 
 ###---------------- Derivatives of log-Likelihood -----------------------------------------------###
 
@@ -704,6 +983,8 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
 
     ### Set up model parameters as input
     ##Set up dictionary based on model parameters. Shallow copy so changes do not overwrite the original
+
+
     modelParams = deepcopy(setParams)
     
     ##Check whether parameters input are iterable and assign to a tuple if not: this allows both `parameters' and `pLabels' to be passed as e.g. a float and string and the method to still be used as it
@@ -712,6 +993,7 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
         raise ValueError('get_logLikelihood - parameters and labels entered do not have the same length (iterable test)')
 
     ##Vary parameters which are being varied as input
+
     modPro.set_modelParameter(modelParams, pLabels, parameters)
 
     ''' Get Model'''
@@ -791,3 +1073,230 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     
     return res
     
+
+def postage_stamp_fitting(image, maxNumb):
+    import scipy.optimize as opt
+    import model_Production as modPro
+    from surface_Brightness_Profiles import gaussian_SBProfile_CXX
+    import measure_Bias as mBias
+    from generalManipulation import makeIterableList
+
+    """
+    This function takes in a flattened image and fits the number of galaxies on the postage stamp, along with their size, ellipticity and centroid.
+    NOTE as of 20/07/2017 this is the bear code, i.e. minimal sanity checks have been done and only the most basic routines has been used. 
+
+    Requires:
+    images: a flatttened image of the same size as that defined in the model dictionary. 
+
+    Returns:
+
+    numbGalaxies: The most likely number of galaxies on the postage stamp
+    galaxiesParams: A dictionary of the paramters of the most likely configuration on the stamp. Each galaxy is a seperate entry within the dict. 
+    """
+    fitParams = ('size','e1','e2','flux','centroid')
+
+    likeLihood = []
+
+    for i in range(maxNumb+1): # i is the number of galaxies in each iteration
+        if i == 0: # If no galaxies the model has to be empty so we don't need to optimse
+            lnL = 0
+            
+            for k in range(image.shape[0]):
+                    tpixlnL = np.power(image[k],2.)
+                    lnL += tpixlnL.sum()  
+
+            likeLihood.append(lnL)
+
+
+        else:
+
+            imageParams = {'Gal_1':modPro.default_ModelParameter_Dictionary()} 
+            for j in range(1,i):
+                imageParams['Gal_'+str(j+1)] = modPro.default_ModelParameter_Dictionary()
+            
+
+            ## We optimise with each parameter individually to create a good estimate of x0 before we vary all parameters.
+            for j in range(5): 
+                if j==0: # we try and fit the centriod first
+                    x0 = []
+                    x0.append(imageParams["Gal_1"]['stamp_size'][0]*0.5)
+                    x0.append(imageParams["Gal_1"]['stamp_size'][0]*0.5)
+
+                    for m in range(i):
+                        maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, args = (image, imageParams, ('centroid',), (m+1)))
+                        imageParams['Gal_'+str(m+1)]['centroid'] = maxima
+
+
+
+
+                elif j == 1:
+                    x0 = []
+                    print "fitting", fitParams[j]
+                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['size'])
+
+                    for m in range(i):
+                        maxima = opt.fminbound(general_logLikelihood, 1, 5, args = (image, imageParams, ('size',), (m+1)), xtol = 0.00001)
+                        imageParams["Gal_"+str(m+1)]["SB"]['size'] = maxima
+                        maxima = np.delete(maxima,0)  
+
+                elif j == 2:
+                    x0 = []
+                    print "fitting", fitParams[j]
+                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['e1'])
+
+                    for m in range(i):
+                        maxima = opt.fminbound(general_logLikelihood, -.1,.1, args = (image, imageParams, ('e1',), (m+1)), xtol = 0.00001)
+                        imageParams["Gal_"+str(m+1)]["SB"]['e1'] = maxima
+                        maxima = np.delete(maxima,0)     
+
+                elif j ==3:
+                    x0 = []
+                    print "fitting", fitParams[j]
+                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['e2'])
+
+                    for m in range(i):
+                        maxima = opt.fminbound(general_logLikelihood, -.3,.3, args = (image, imageParams, ('e2',), (m+1)), xtol = 0.00001)
+                        imageParams["Gal_"+str(m+1)]["SB"]['e2'] = maxima
+                        maxima = np.delete(maxima,0)
+
+                else:
+                    x0 = []
+                    print "fitting", fitParams[j]
+                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['flux'])
+
+                    for m in range(i):
+                        maxima = opt.fminbound(general_logLikelihood, 7, 13, args = (image, imageParams, ('flux',), (m+1)), xtol = 0.00001)
+                        imageParams["Gal_"+str(m+1)]["SB"]['flux'] = maxima
+                        maxima = np.delete(maxima,0)  
+
+            print imageParams
+
+            '''
+                                        
+                else:
+                    x0 = []
+                    x0.append(imageParams["Gal_"+str(m+1)]["SB"][fitParams[(j-1)]])
+
+                    for m in range(i):
+                        maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, args = (image, imageParams, (fitParams[j-1],), (m+1)))
+                        imageParams["Gal_"+str(m+1)]["SB"][fitParams[(j-1)]] = maxima
+                        maxima = np.delete(maxima,0)
+                        print "we just updated", fitParams[(j-1)]
+                        print imageParams 
+            
+                            elif j ==1:
+                    x0 = []
+                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['size'])
+
+                    for m in range(i):
+                        maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, args = (image, imageParams, ('size',), (m+1)))
+                        imageParams["Gal_"+str(m+1)]["SB"]['size'] = maxima
+                        maxima = np.delete(maxima,0)
+                
+    '''
+         
+
+            ## Now given we have maximised individual, we maximise with all of them
+            x0 = []
+            print "Before we finally optimise", imageParams
+            for k in range(0,i):
+                  for j in range(4):
+                      x0.append(imageParams["Gal_"+str(k+1)]["SB"][fitParams[j]])  
+            for k in range(i):
+                x0.append(imageParams["Gal_"+str(k+1)]['centroid'][0])  
+                x0.append(imageParams["Gal_"+str(k+1)]['centroid'][1])
+                    
+
+            ## Do optimization
+            print "we got here", x0
+            maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, maxiter = 200**(i),args = (image, imageParams, 'all', None)) # 
+            print imageParams
+            likeLihood.append(general_logLikelihood(maxima, image, imageParams,'all', None))
+            print likeLihood
+
+    #print (likeLihood.index(min(likeLihood))+1)
+    
+
+
+def general_logLikelihood(parameters, image, modelParams, fitParams, galaxy_Number, signModifier =1, callCount = 0): # 
+    import math, sys
+    import model_Production as modPro
+    import surface_Brightness_Profiles as SBPro
+    import generalManipulation
+
+    """
+    Cut down version of get_logLikelihood. It doesn't assume any special galaxy and will return the negative of the log-likelihood to be maximsed.
+
+    Requires:
+    parameters: these are the parameters that specify the model, e.g. those given in the tuple fitParams below. 
+    image: flatterened image to fit
+    modelParams: a dictionary with all the galaxy dicts. The keys must be 'Gal_i', where i indexes the galaxy
+    fitParams: paramters that want to be fit, should be a tuple in the order ('size', 'e1', 'e2', 'flux', 'centriod',)
+
+    """
+    callCount +=1
+    print parameters   
+
+
+    numbGalaxies = len(modelParams)
+
+
+    ## Takes the values of parameters and puts them into the model dictionary
+
+
+
+
+
+
+    if fitParams == 'all':
+        fitParams = ('size', 'e1', 'e2', 'flux', 'centriod',)
+        
+        for i in range(numbGalaxies):
+            for j in range(len(fitParams)-1):
+                modelParams["Gal_"+str(i+1)]["SB"][fitParams[j]] = parameters[0]
+                parameters = np.delete(parameters,0) 
+
+        for i in range(numbGalaxies):
+            modelParams["Gal_"+str(i+1)]['centroid'][0] = parameters[0]
+            parameters = np.delete(parameters,0)
+            modelParams["Gal_"+str(i+1)]['centroid'][1] = parameters[0]
+            parameters = np.delete(parameters,0) 
+    
+    elif fitParams == 'centroid': # We assume if we only want to vary one parameter we only want to do it for one
+        modelParams["Gal_"+str(galaxy_Number)]['centroid'][0] = parameters[0]
+        modelParams["Gal_"+str(i+1)]['centroid'][1] = parameters[1]
+
+    else:
+        print parameters
+        modelParams["Gal_"+str(galaxy_Number)]["SB"][fitParams] = parameters #[0]
+
+
+
+    ## Create the model
+
+    model = np.zeros(modelParams["Gal_1"]['stamp_size'])
+
+    for i in range(numbGalaxies):
+        other_gal_model, disc_to_add = modPro.user_get_Pixelised_Model(modelParams["Gal_"+str(i+1)], noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
+        model += other_gal_model
+
+    model = model.flatten()
+
+    ## Now find negative of log-likelihood
+
+
+    lnL = 0
+    absSign = signModifier/abs(signModifier)
+    if(len(image.shape) == len(model.shape)+1):
+
+        #print "Considering sum over images", pLabels, parameters
+
+        for i in range(image.shape[0]):
+            tpixlnL = absSign*np.power(image[i]-model,2.)
+            lnL += tpixlnL.sum()    
+    else:
+        tpixlnL = absSign*np.power(image-model,2.)
+        lnL += tpixlnL.sum()
+
+    return lnL
+

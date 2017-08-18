@@ -53,10 +53,10 @@ def default_ModelParameter_Dictionary(**setters):
     PSFDict = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0.0, PSF_Gauss_e2 = 0.0)
 
     ## SB Declaration
-    SBDict = dict(modelType = 'gaussian', size = 1.41, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.], bg = 0.)
+    SBDict = dict(modelType = 'gaussian', size = 2, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.], bg = 0.)
 
-    imgshape = np.array([10, 10])
-    dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict)
+    imgshape = np.array([30, 30]) # Changed  orginally ([10,10])           
+    dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20, stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict) 
 
     ## Use this to set SB and PSF parameters - RECURSIVE
     ##set_modelParameter(dct, setters.keys(), setters.values())
@@ -430,13 +430,12 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     if(iParams['SB']['e1']*iParams['SB']['e1'] + iParams['SB']['e2']*iParams['SB']['e2'] >= 1. or iParams['SB']['size'] <= 0):
         return np.zeros(iParams['stamp_size'])
 
+    if(inputImage is None):   
         ###Get Surface Brightness image on enlarged grid. This is to take into account that the surface brightness profile may be non-zero outside the 
         #Postage Stamp boundaries set.
         ## Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, 
         #and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, 
         #and this can be turned off by setting enlargementFactor = 1.
-
-     if(inputImage is None):   
         if(iParams['PSF']['PSF_Type']):
             if(iParams['PSF']['PSF_size'] <= 0.):
                 raise ValueError('user_get_Pixelised_Model - PSF Size is invalid (Zero or negative)')
@@ -475,6 +474,8 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         if(sbProfileFunc is None):
             raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
 
+
+        #print "Calling sb profile function with image params: ", iParams # Commented out as really annoying
         sb = sbProfileFunc(xy, cen, iParams['SB']['size'], iParams['SB']['e1'], iParams['SB']['e2'], iParams['SB']['flux'], der = SBDer, **sbFuncArgs)
 
         ''' Get the PSF model and convolve (if appropriate) '''
@@ -561,8 +562,8 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
             
             ##Apply Gaussian radnom noise to each pixel using a Guassian model
             ## Get Noise Variance by SNR
-            iParams['noise'] = SNR_Mapping(Res, SNR = iParams['SNR']) ##This preserves flux
-            
+            iParams['noise'] = 0.025#SNR_Mapping(Res, SNR = iParams['SNR']) ##This preserves flux
+            iParams['noise']
             #print 'User defined noise variance taken to be:', iParams['noise']
             
             ## Apply Noise Variance

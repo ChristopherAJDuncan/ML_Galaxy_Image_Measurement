@@ -6,73 +6,85 @@ import python.surface_Brightness_Profiles as SBPro
 import python.image_measurement_ML as imMeas
 import numpy as np
 import python.noiseDistributions as nDist
+from matplotlib.pyplot import *
 
 #Single Run - Derivative
-print 'Running'
+rc('text', usetex=True)
+rc('font', family='serif')
 
 imageParams = modPro.default_ModelParameter_Dictionary()
-imageParams['SNR'] = 20.
-imageParams['e1'] = 0.
-imageParams['e2'] = 0.
-imageParams['size'] = 2.0
-imageParams['flux'] = 4.524
+imageParams['SNR'] = 30
+imageParams['SB']['e1'] = .12
+imageParams["SB"]['e2'] = .05
+imageParams["SB"]['size'] = 2.5
+imageParams["SB"]['flux'] = 14
 imageParams['stamp_size'] = [30,30]
-imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
+imageParams['centroid'] = (np.array(imageParams["stamp_size"])+1)/2
 
 #der = ['e1', 'e2']
 der = None
 
-###Get image using GALSIM default models
-#image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = 'Gaussian', outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
-#image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
-
-##Surface Brightness profile routine
 image, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
 
-### User-defined model with Guassian noise
-#image = np.genfromtxt('./TestPrograms/Hall_Models/fid_image.dat')
-#image = image.T
+##Surface Brightness profile routine
 
-print "Produced CXX image"
+imageParams = modPro.default_ModelParameter_Dictionary()
+imageParams['SNR'] = 30
+imageParams['SB']['e1'] = -.40
+imageParams["SB"]['e2'] = .20
+imageParams["SB"]['size'] = 1.8
+imageParams["SB"]['flux'] = 10
+imageParams['stamp_size'] = [30,30]
+imageParams['centroid'] = (np.array([10,18]))
 
+image_temp, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
 
-#print 'image Noise Estimated as:', imMeas.estimate_Noise(image, maskCentroid = imageParams['centroid'])
+image += image_temp
 
-#print 'imageSB Noise Estimated as:', imMeas.estimate_Noise(imageSB, maskCentroid = imageParams['centroid'])
+noise =  0.035*np.random.randn(30,30)
+image += noise
 
-##A Halls version
-
-#image = np.genfromtxt('/home/cajd/Downloads/dfid_image.dat')
-#image = image.T
-#print 'Got Original'
-
-#print 'Halls:', np.power(image,2.).sum()
-
-###Get image using user-specified surface brightness model
-#imageSB, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
-#imageSB, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy)
-
-
-#imageSB, imageParams = modPro.user_get_Pixelised_Model(imageParams, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, der = ['e1', 'e1'])
-
-#print 'Final Check:: sumImage, sumImageSB, ratioSum(image/SB), flux:', image.sum(), imageSB.sum(), image.sum()/imageSB.sum(), imageParams['flux']
-
-import pylab as pl
-f = pl.figure()
+f = figure()
 ax = f.add_subplot(211)
 im = ax.imshow(image, interpolation = 'nearest')
-pl.colorbar(im)
-# ax = f.add_subplot(212)
-# im = ax.imshow(imageSB, interpolation = 'nearest')
-# pl.colorbar(im)
-pl.show()
+colorbar(im)
+title(r'Input image')
+show()
 
 
-### Plot Residual
-import pylab as pl
+# Under predicting size
 
-#pl.imshow((imageSB-image))
-#pl.set_title('GALSIM - User-Specified')
-pl.colorbar()
+size_estimates = [2.0,2.5,3.0]
 
-pl.show()
+for i in size_estimates:
+
+	imageParams = modPro.default_ModelParameter_Dictionary()
+	imageParams['SNR'] = 30
+	imageParams['SB']['e1'] = -.40
+	imageParams["SB"]['e2'] = .20
+	imageParams["SB"]['size'] = 1.8
+	imageParams["SB"]['flux'] = 10
+	imageParams['stamp_size'] = [30,30]
+	imageParams['centroid'] = (np.array([10,18]))
+
+	image_temp, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
+	res = image - image_temp
+
+	imageParams = modPro.default_ModelParameter_Dictionary()
+	imageParams['SNR'] = 30
+	imageParams['SB']['e1'] = .12
+	imageParams["SB"]['e2'] = .05
+	imageParams["SB"]['size'] = i
+	imageParams["SB"]['flux'] = 14
+	imageParams['stamp_size'] = [30,30]
+	imageParams['centroid'] = (np.array(imageParams["stamp_size"])+1)/2
+
+	image_temp, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
+	res -= image_temp
+
+	f = figure()
+	ax = f.add_subplot(211)
+	im = ax.imshow(res, interpolation = 'nearest')
+	colorbar(im)
+	title(r'Residuals')
+	show()
