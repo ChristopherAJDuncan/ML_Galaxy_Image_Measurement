@@ -5,7 +5,7 @@ import math
 from scipy.stats import linregress
 
 numb_cores = 4
-'''
+
 DataDict = {}
 
 for i in range(numb_cores):
@@ -61,7 +61,7 @@ for row in AX:
 		ax.set_title(r'Radial displacement bin %.1f px, $ \mu=%.3f \pm %.3f$' %(Rad_position[i-1], mu, sigma,)) # \mu=%.3f \pm \sigma=%.3f$' %(mu, sigma)
 		y = (mu)*size + Analysis[(i-1)][1]
 		ax.plot(size, y, color ='k')
-		
+
 
 		i +=1
 suptitle(r'True size vs fitted size}', fontsize = 20)
@@ -84,10 +84,10 @@ errorbar(Rad_position, mu, yerr = err, fmt = 'x')
 title(r'$\mu$ Vs radial displacement of secondary galaxy')
 xlabel(r'Radial displacement of second galaxy from the centriod of the primary galaxy [px]')
 ylabel(r'$\mu$')
-show
-
+show()
 
 '''
+
 numb_cores = 4
 
 DataDict = {}
@@ -116,19 +116,28 @@ for i in range(numb_cores):
 	else:
 		Total_data = np.vstack((Total_data,Data))
 
+fit = linregress(Total_data[:,0], Total_data[:,1])
+print fit
+
+#otherData = np.delete(Total_data, (1, 4,6,7,10), axis =0)
 
 
 
 #for i in range(len(Total_data[:,0])):
 #	Total_data[i,0] = math.log(Total_data[i,0])
 
+Fitted_line =(Total_data[:,0]*fit[0]+fit[1])
+
 plt.errorbar(Total_data[:,0],Total_data[:,1], yerr = Total_data[:,2], fmt = 'x', label = 'Deviation of primary galaxy area', )
-
+plt.plot(Total_data[:,0], Fitted_line )
 plt.axhline(0, color ='k')
-plt.xlim([.3,1.5])
-
-plt.xlabel(r'$\mathrm{Log\ of\ the\ size\ of\ the\ galaxy}$')
+plt.xlim([.9,1.1])
+plt.axhline()
+plt.xlabel(r'$\mathrm{Magnification}$')
 plt.ylabel(r'$\mathrm{Deviation\ from\ mean}$')
-plt.title(r"$\mathrm{Bias\ in\ area\ fitting\ algorithm\ for\ two\ galaxies,\ combing\ the\ data\ set\ of\ } 10^4 \mathrm{realizations}$")
+plt.title(r"$\mathrm{Bias\ in\ magnification\ fitting\ algorithm\ for\ two\ galaxies,\ combing\ the\ data\ set\ of\ } 10^4 \mathrm{realizations}$")
 plt.show()
+
+print (Fitted_line-Total_data[:,1])
+'''
 

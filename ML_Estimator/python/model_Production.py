@@ -764,6 +764,66 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
             
     return aimage, iParams
 
+
+def magnification_Field(inputDict, fittingParams, mag = None):
+    """
+    Takes a galaxy dictionary and then applies the magnification field to both flux and size (work should be done to do either).
+
+    Requires:
+    -- inputDict: Dictionary containing all the realizations with a set magnification field
+    -- mag: If mag is None the magnification value is taken from the dictionary, if not then it is the value given
+    -- fittingParams: The magnification  parameters to fit, should be a tuple 
+    """
+    galDict = deepcopy(inputDict)
+    numbImages = len(galDict)
+    mag = np.asscalar(mag)
+
+
+    if len(fittingParams) ==2:
+        for i in range(numbImages):
+            for j in range(len(galDict['Realization_'+str(i)])):
+                if mag is None:
+                    magnification = galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["magnification"]
+                elif type(mag) == float or type(mag)==np.float64:
+                    magnification = mag
+                else:
+
+                    raise TypeError('\'mag\' must be a float or equal to None, type is ' + str(type(mag)))
+
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"] *= magnification
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"] *= magnification
+                
+
+    elif fittingParams[0] == 'size':
+        for i in range(numbImages):
+            for j in range(len(galDict['Realization_'+str(i)])):
+                if mag is None:
+                    magnification = galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["magnification"]
+                elif type(mag) == float or type(mag)==np.float64:
+                    magnification = mag
+                else:
+
+                    raise TypeError('\'mag\' must be a float or equal to None, type is ' + str(type(mag)))
+
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"] *= magnification
+                
+
+    elif fittingParams[0] == 'flux':
+        for i in range(numbImages):
+            for j in range(len(galDict['Realization_'+str(i)])):
+                if mag is None:
+                    magnification = galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["magnification"]
+                elif type(mag) == float or type(mag)==np.float64:
+                    magnification = mag
+                else:
+                    raise TypeError('\'mag\' must be a float or equal to None, type is ' + str(type(mag)))
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"] *= magnification
+               
+    else: 
+        raise TypeError("The fittingParam variable should be a tuple with either/or /'flux/' or /'size/'")
+
+
+    return galDict
 ##---------------------------- Differentiation Methods --------------------------------------------##
 
 def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute = False):

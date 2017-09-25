@@ -81,7 +81,7 @@ def estimate_Noise(image, maskCentroid = None):
 
 ## -o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o----- Error Estimation -----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
 
-def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
+def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup, useNumericDeriv = False, ml_Eval = None):
     from copy import deepcopy
     """
     Calculates the marginalised fisher error on the set of fitParams (tuple) around maximum-likelihood point ML.
@@ -101,6 +101,8 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     image: 2D ndarray, containing image postage stamp (image being fit)
     setParams: model dictionary defining all fixed parameters
     modelLookup: modelLookup table as defined in find_ML_Estimator. Can be None if no lookup is used.
+    useNumericDeriv: If 'False' then the analytic deriviative is used, if not a finite difference method is used (note so far this only works for magnification measurements and for many realizations).
+    ml_Eval: The value of the function evaluated at the ML point, for numerical deriviative only 
 
     Returns:
     -- err: Tuple containing marginalised Fisher error for all input parameters 
@@ -113,14 +115,17 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup):
     if (np.shape(image)[1])==1:
         ddlnL = differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, setParams, modelLookup = modelLookup, order = 2, signModifier = 1.)
         ddlnL = -1.*ddlnL ##This is now the Fisher Matrix
-    else:
+    elif useNumericDeriv == False:
         ddlnL = 0
         for i in range((np.shape(image))[1]):
             image_to_use = np.zeros((np.shape(image))[0])
-            for j in range(900): # turns coloumn vector to row vector
+            for j in range(900): # turns coloumn vector to row vector (could just use .flatten())
                 image_to_use[j] = image[j,i]
             ddlnL -= differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image_to_use, setParams['Realization_'+str(i)]['Gal_'+str(0)], modelLookup = modelLookup, order = 2, signModifier = 1.)
-
+    elif useNumericDeriv == True:
+        return 1/(finite_Second_Derivative(mag_likelihood, .0001, (ML, image, setParams, fitParams), mlFuncEval = np.asscalar(ml_Eval))) # Check this is the right expression for error with a 1x1 fisher matrix
+    else:
+        raise TypeError('Error while running fisher_Error_ML')
 
     Fin = np.linalg.inv(ddlnL) # Inverts Fisher matrix which is the covarience matrix
 
@@ -788,7 +793,7 @@ def combined_logLikelihood(fittingParameter, images_flattened, galDict, fitting 
 
     model_flattened = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0]*galDict['Realization_0']['Gal_0']["stamp_size"][1], numbImages])
     for i in range(numbImages):
-        for j in range(1): ###len(galDict['Realization_'+str(i)])):### This has broken the code
+        for j in range(len(galDict['Realization_'+str(i)])): 
         
             model_to_add, disc = modPro.user_get_Pixelised_Model(galDict['Realization_'+str(i)]['Gal_'+str(j)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
             models[:,:,i] += model_to_add
@@ -835,11 +840,12 @@ def combinded_min(x0,images, galParams):
 
 ###--------------- Finds log likelihood given a magnification field ----------------------------###
 
-def mag_likelihood(mu, magParams,images_flattened, galDict):
+def mag_likelihood(mu, images_flattened, galDict, fittingParams):
 
     import math, sys
     import model_Production as modPro
     import surface_Brightness_Profiles as SBPro
+    import matplotlib.pyplot as plt
     import generalManipulation
 
     '''
@@ -853,61 +859,47 @@ def mag_likelihood(mu, magParams,images_flattened, galDict):
     galDict: dictionary with each key each realization and then each galaxy an entry within that. The fitted galaxy is gal 0. 
 
     '''
-
-    print mu
-    print galDict
-
-    galDict['Realization_0']['Gal_0']['SB']["size"]*= mu
-    galDict['Realization_0']['Gal_1']['SB']["flux"]*= mu
-
-
-    galDict['Realization_1']['Gal_0']['SB']["size"]*= mu
-    galDict['Realization_1']['Gal_1']['SB']["flux"]*= mu
-    '''
-    for i in range(len(galDict)):
-        for j in range(2): # Assumes only two galaxies on postage stamp
-            if len(magParams) == 2:
-                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"]*= mu
-                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"]*= mu
-            elif len(magParams) ==1:
-                if magParams[0] == 'size':
-                    galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"] *= mu
-                elif magParams[0] == 'flux':
-                    galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"] *= mu
-                else:
-                    raise ValueError('magParams entry is not valid, can be \'flux\' or \'size\'')
-            else:
-                raise ValueError('magParams can only contain 1 or two entries ', magParams)
-    '''
     numbImages = len(galDict)
 
-    # Creates the models to compare to
+    # Updates the magnification value and applies the magnification to the size and flux
+
+    lensedDict = modPro.magnification_Field(galDict, fittingParams, mu)
+
+
+    # Creates the models 
 
     models = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0],galDict['Realization_0']['Gal_0']["stamp_size"][1],numbImages]) #
 
     model_flattened = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0]*galDict['Realization_0']['Gal_0']["stamp_size"][1], numbImages])
     
+
     for i in range(numbImages):
         for j in range(len(galDict['Realization_'+str(i)])):
         
-            model_to_add, disc = modPro.user_get_Pixelised_Model(galDict['Realization_'+str(i)]['Gal_'+str(j)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
-            models[:,:,i] += model_to_add
+            model_to_add, disc = modPro.user_get_Pixelised_Model(lensedDict['Realization_'+str(i)]['Gal_'+str(j)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
+            models[:,:,i] += model_to_add  
+            
+        model_flattened[:,i] = models[:,:,i].flatten()    
 
 
-    model_flattened[:,i] = models[:,:,i].flatten()
 
-    # find loglikelihood of each realization and multiply together
+    # Finds log likelihood and returns the value
+
 
     lnL = 0
 
     for i in range(numbImages):
-        tpixlnL = np.power(images_flattened[:,i]-model_flattened[:,i],2.)
+        tpixlnL = np.power(images_flattened[:,i]-model_flattened[:,i],2.)#np.power(images_flattened[:,i]-model_flattened[:,i],2.)
         lnL += tpixlnL.sum()*0.5/(galDict['Realization_'+str(i)]['Gal_0']['noise']**2.)
-    import math as m
-    print 'lnL', lnL
+
+
+
+    #print 'lnL', lnL
     return lnL
 
-def mag_min(x0,images, unlensedParams, magParams):
+
+
+def mag_min(x0,images, unlensedParams, fittingParams):
 
     import scipy.optimize as opt
     '''
@@ -916,14 +908,16 @@ def mag_min(x0,images, unlensedParams, magParams):
     Requires:
     x0: initial guess for the size of the galaxy
     images: numpy array with each row a different image
-    galParams:  
+    galParams: unlensed dictionary, i.e. gives all dictionay params apart from those being fit.
+    fittingParams: Tuple telling if either/or flux should be fit
     '''
 
-    mlValue = opt.fmin(mag_likelihood, x0 = x0, xtol = 0.01,args = (magParams, images, unlensedParams,))
-    print mlValue
+    mlValue = opt.fmin(mag_likelihood, x0 = x0, xtol = 0.0001,args = (images, unlensedParams, fittingParams), full_output = 1)
+    mlError = fisher_Error_ML(mlValue[0], fittingParams, images, unlensedParams, None, useNumericDeriv = True, ml_Eval = mlValue[1] )
+
     #mlError = fisher_Error_ML(mlValue, ('magnification',), images, galParams, None)
 
-    return mlValue #, mlError
+    return mlValue[0], mlError
 
 
 ###---------------- Derivatives of log-Likelihood -----------------------------------------------###
@@ -1074,229 +1068,76 @@ def differentiate_logLikelihood_Gaussian_Analytic(parameters, pLabels, image, se
     return res
     
 
-def postage_stamp_fitting(image, maxNumb):
-    import scipy.optimize as opt
-    import model_Production as modPro
-    from surface_Brightness_Profiles import gaussian_SBProfile_CXX
-    import measure_Bias as mBias
-    from generalManipulation import makeIterableList
+##----- Finite difference 2nd derivative ------##
 
-    """
-    This function takes in a flattened image and fits the number of galaxies on the postage stamp, along with their size, ellipticity and centroid.
-    NOTE as of 20/07/2017 this is the bear code, i.e. minimal sanity checks have been done and only the most basic routines has been used. 
+def finite_Second_Derivative(func, stepPlus, args, stepMinus = None, mlFuncEval = None):
 
-    Requires:
-    images: a flatttened image of the same size as that defined in the model dictionary. 
-
-    Returns:
-
-    numbGalaxies: The most likely number of galaxies on the postage stamp
-    galaxiesParams: A dictionary of the paramters of the most likely configuration on the stamp. Each galaxy is a seperate entry within the dict. 
-    """
-    fitParams = ('size','e1','e2','flux','centroid')
-
-    likeLihood = []
-
-    for i in range(maxNumb+1): # i is the number of galaxies in each iteration
-        if i == 0: # If no galaxies the model has to be empty so we don't need to optimse
-            lnL = 0
-            
-            for k in range(image.shape[0]):
-                    tpixlnL = np.power(image[k],2.)
-                    lnL += tpixlnL.sum()  
-
-            likeLihood.append(lnL)
-
-
-        else:
-
-            imageParams = {'Gal_1':modPro.default_ModelParameter_Dictionary()} 
-            for j in range(1,i):
-                imageParams['Gal_'+str(j+1)] = modPro.default_ModelParameter_Dictionary()
-            
-
-            ## We optimise with each parameter individually to create a good estimate of x0 before we vary all parameters.
-            for j in range(5): 
-                if j==0: # we try and fit the centriod first
-                    x0 = []
-                    x0.append(imageParams["Gal_1"]['stamp_size'][0]*0.5)
-                    x0.append(imageParams["Gal_1"]['stamp_size'][0]*0.5)
-
-                    for m in range(i):
-                        maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, args = (image, imageParams, ('centroid',), (m+1)))
-                        imageParams['Gal_'+str(m+1)]['centroid'] = maxima
-
-
-
-
-                elif j == 1:
-                    x0 = []
-                    print "fitting", fitParams[j]
-                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['size'])
-
-                    for m in range(i):
-                        maxima = opt.fminbound(general_logLikelihood, 1, 5, args = (image, imageParams, ('size',), (m+1)), xtol = 0.00001)
-                        imageParams["Gal_"+str(m+1)]["SB"]['size'] = maxima
-                        maxima = np.delete(maxima,0)  
-
-                elif j == 2:
-                    x0 = []
-                    print "fitting", fitParams[j]
-                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['e1'])
-
-                    for m in range(i):
-                        maxima = opt.fminbound(general_logLikelihood, -.1,.1, args = (image, imageParams, ('e1',), (m+1)), xtol = 0.00001)
-                        imageParams["Gal_"+str(m+1)]["SB"]['e1'] = maxima
-                        maxima = np.delete(maxima,0)     
-
-                elif j ==3:
-                    x0 = []
-                    print "fitting", fitParams[j]
-                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['e2'])
-
-                    for m in range(i):
-                        maxima = opt.fminbound(general_logLikelihood, -.3,.3, args = (image, imageParams, ('e2',), (m+1)), xtol = 0.00001)
-                        imageParams["Gal_"+str(m+1)]["SB"]['e2'] = maxima
-                        maxima = np.delete(maxima,0)
-
-                else:
-                    x0 = []
-                    print "fitting", fitParams[j]
-                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['flux'])
-
-                    for m in range(i):
-                        maxima = opt.fminbound(general_logLikelihood, 7, 13, args = (image, imageParams, ('flux',), (m+1)), xtol = 0.00001)
-                        imageParams["Gal_"+str(m+1)]["SB"]['flux'] = maxima
-                        maxima = np.delete(maxima,0)  
-
-            print imageParams
-
-            '''
-                                        
-                else:
-                    x0 = []
-                    x0.append(imageParams["Gal_"+str(m+1)]["SB"][fitParams[(j-1)]])
-
-                    for m in range(i):
-                        maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, args = (image, imageParams, (fitParams[j-1],), (m+1)))
-                        imageParams["Gal_"+str(m+1)]["SB"][fitParams[(j-1)]] = maxima
-                        maxima = np.delete(maxima,0)
-                        print "we just updated", fitParams[(j-1)]
-                        print imageParams 
-            
-                            elif j ==1:
-                    x0 = []
-                    x0.append(imageParams["Gal_"+str(m+1)]["SB"]['size'])
-
-                    for m in range(i):
-                        maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, args = (image, imageParams, ('size',), (m+1)))
-                        imageParams["Gal_"+str(m+1)]["SB"]['size'] = maxima
-                        maxima = np.delete(maxima,0)
-                
     '''
-         
+    This function finds the 2nd derivative using finite differencing only in 1D. Error is proportional to stepPlus**2  
 
-            ## Now given we have maximised individual, we maximise with all of them
-            x0 = []
-            print "Before we finally optimise", imageParams
-            for k in range(0,i):
-                  for j in range(4):
-                      x0.append(imageParams["Gal_"+str(k+1)]["SB"][fitParams[j]])  
-            for k in range(i):
-                x0.append(imageParams["Gal_"+str(k+1)]['centroid'][0])  
-                x0.append(imageParams["Gal_"+str(k+1)]['centroid'][1])
-                    
+    Paramets
+    --------
 
-            ## Do optimization
-            print "we got here", x0
-            maxima = opt.fmin(general_logLikelihood, x0 = x0, xtol = 0.00001, maxiter = 200**(i),args = (image, imageParams, 'all', None)) # 
-            print imageParams
-            likeLihood.append(general_logLikelihood(maxima, image, imageParams,'all', None))
-            print likeLihood
+    func: The function for which you want the 2nd derivative
+    args: Tuple of arguments passed to evaluate the function (same order as the argmuents of the function)
+    stepPlus: The step size in the positive direction
+    stepMinus: The step size in the negative direction, if not entered it is tbe same as the positive step size
+    mlFuncEval: To be used if the function has already been evluated at xVal
 
-    #print (likeLihood.index(min(likeLihood))+1)
-    
+    Returns
+    -------
 
+    secondDeriv: The second derivative evalutated at xVal
 
-def general_logLikelihood(parameters, image, modelParams, fitParams, galaxy_Number, signModifier =1, callCount = 0): # 
-    import math, sys
-    import model_Production as modPro
-    import surface_Brightness_Profiles as SBPro
-    import generalManipulation
+    Notes
+    -----
 
-    """
-    Cut down version of get_logLikelihood. It doesn't assume any special galaxy and will return the negative of the log-likelihood to be maximsed.
+    To minimse the error stepPlus & stepMinus should be as close to each other as possible otherwise error is proportional to stepPlus.
+    '''
 
-    Requires:
-    parameters: these are the parameters that specify the model, e.g. those given in the tuple fitParams below. 
-    image: flatterened image to fit
-    modelParams: a dictionary with all the galaxy dicts. The keys must be 'Gal_i', where i indexes the galaxy
-    fitParams: paramters that want to be fit, should be a tuple in the order ('size', 'e1', 'e2', 'flux', 'centriod',)
-
-    """
-    callCount +=1
-    print parameters   
+    if stepMinus == None:
+        stepMinus = stepPlus
 
 
-    numbGalaxies = len(modelParams)
-
-
-    ## Takes the values of parameters and puts them into the model dictionary
-
-
-
-
-
-
-    if fitParams == 'all':
-        fitParams = ('size', 'e1', 'e2', 'flux', 'centriod',)
-        
-        for i in range(numbGalaxies):
-            for j in range(len(fitParams)-1):
-                modelParams["Gal_"+str(i+1)]["SB"][fitParams[j]] = parameters[0]
-                parameters = np.delete(parameters,0) 
-
-        for i in range(numbGalaxies):
-            modelParams["Gal_"+str(i+1)]['centroid'][0] = parameters[0]
-            parameters = np.delete(parameters,0)
-            modelParams["Gal_"+str(i+1)]['centroid'][1] = parameters[0]
-            parameters = np.delete(parameters,0) 
-    
-    elif fitParams == 'centroid': # We assume if we only want to vary one parameter we only want to do it for one
-        modelParams["Gal_"+str(galaxy_Number)]['centroid'][0] = parameters[0]
-        modelParams["Gal_"+str(i+1)]['centroid'][1] = parameters[1]
-
+    if mlFuncEval == None:
+        return 2*((stepMinus*func((args[0]+stepPlus),*args[1:])+stepPlus*func((args[0]-stepMinus),*args[1:])-(stepPlus+stepMinus)*func(*args))/((stepPlus**2)*stepMinus+(stepMinus**2)*stepPlus))
+    elif type(mlFuncEval) ==float:
+        return 2*((stepMinus*func((args[0]+stepPlus),*args[1:])+stepPlus*func((args[0]-stepMinus),*args[1:])-(stepPlus+stepMinus)*mlFuncEval)/((stepPlus**2)*stepMinus+(stepMinus**2)*stepPlus))
     else:
-        print parameters
-        modelParams["Gal_"+str(galaxy_Number)]["SB"][fitParams] = parameters #[0]
+        raise TypeError('mlFuncEval should be a float not a ' + str(type(mlFuncEval)))
 
 
 
-    ## Create the model
-
-    model = np.zeros(modelParams["Gal_1"]['stamp_size'])
-
-    for i in range(numbGalaxies):
-        other_gal_model, disc_to_add = modPro.user_get_Pixelised_Model(modelParams["Gal_"+str(i+1)], noiseType = None, sbProfileFunc = SBPro.gaussian_SBProfile_CXX)
-        model += other_gal_model
-
-    model = model.flatten()
-
-    ## Now find negative of log-likelihood
 
 
-    lnL = 0
-    absSign = signModifier/abs(signModifier)
-    if(len(image.shape) == len(model.shape)+1):
 
-        #print "Considering sum over images", pLabels, parameters
 
-        for i in range(image.shape[0]):
-            tpixlnL = absSign*np.power(image[i]-model,2.)
-            lnL += tpixlnL.sum()    
-    else:
-        tpixlnL = absSign*np.power(image-model,2.)
-        lnL += tpixlnL.sum()
 
-    return lnL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

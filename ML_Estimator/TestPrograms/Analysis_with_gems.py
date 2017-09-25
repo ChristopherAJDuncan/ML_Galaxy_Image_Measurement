@@ -43,7 +43,7 @@ f1 - flag constraint for fitting [10] | f2 - flag for science sample [11] | RAJ2
 NOTE in the variable Gems_data all the inputs are strings and the first row is coloumn titles. Eccentricity measures need to be changed to give shear values for model
 
 '''
-
+'''
 # Some basic analysis of the gems data set	
 
 eccen = []
@@ -165,26 +165,10 @@ def getRandData(catData, size = None, centered = 'n' ):
 	return galDict
 
 
-'''
-'''
+
 der = None
-
+'''
 position = np.linspace(0,14.9,5)
-
-for i in range(5):
-	image, disc = modPro.user_get_Pixelised_Model(getRandData(Gems_data, centered =position[i]), noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
-
-	import pylab as pl
-	f = pl.figure()
-	ax = f.add_subplot(211)
-	im = ax.imshow(image, interpolation = 'nearest')
-	pl.colorbar(im)
-	# ax = f.add_subplot(212)
-	# im = ax.imshow(imageSB, interpolation = 'nearest')
-	# pl.colorbar(im)
-	pl.show()
-'''
-'''
 
 # Defines the function to be passed to the multipocessing module, the galaxies are different between each size.
 
@@ -246,7 +230,7 @@ def finding_ML_estimator(area_values, coreNumber, numbCores):
 
 # Same as above, but only the size of target galaxy changes between iteration and each out put file is a different radial bin
 
-
+'''
 areas = np.array([2,2.71,4.48,8.00,11.47])
 Rad_position = [3.0,6.0,10.0,14.0]
 
@@ -257,7 +241,7 @@ der = None
 
 # First generate the dicts and noise
 
-Numb_real = 2000
+Numb_real = 500000
 
 
 GalDict = {} # Structure of GalDict is GalDict['Radial_position_'+str(Rad_position index)]['Realization_'+str(realization index)]['Gal_'+str(gal index)]
@@ -350,7 +334,6 @@ Process_2.start()
 Process_3.start()
 
 print 'done'
-'''
 
 
 

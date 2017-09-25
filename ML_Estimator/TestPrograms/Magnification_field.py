@@ -118,78 +118,54 @@ def getRandData(catData, centered = 'n'):
 
 
 
-
-# Same as above, but only the size of target galaxy changes between iteration and each out put file is a different radial bin
-
-
-
-Magnification = np.linspace(.94,1.05,12) #np.array([1.00,1.001,1.002,1.003])
-MagParams = ('flux','size')
+Magnification = np.linspace(0.95,1.05,10)
+Numb_real = 10000
+Pixel_size = 30
 der = None
-
+Fitting_Params = ('size','flux',)
 
 
 # First generate the dicts and noise
 
-Numb_real = 2
+Unlensed_dict = {}
 
+for i in range(Numb_real):
 
-Unlensed_dict = {} # Structure of GalDict is GalDict['Mag_'+str(Rad_position index)]['Realization_'+str(realization index)]['Gal_'+str(gal index)]
-
-for j in range(Numb_real):
-	Unlensed_dict['Realization_'+str(j)] = {'Gal_0':getRandData(Gems_data, centered = 'y'), 'Gal_1':getRandData(Gems_data,)}
-print 'unlensed dict is', Unlensed_dict
-
-GalDict = {}
-
-for j in range(len(Magnification)):
-	GalDict['Mag_'+str(j)] = Unlensed_dict
-
-
+	Unlensed_dict['Realization_'+str(i)] = {'Gal_0':getRandData(Gems_data, centered = 'y'), 'Gal_1':getRandData(Gems_data,)}
 
 	
-	GalDict['Mag_'+str(j)]['Realization_0']['Gal_0']['SB']["flux"] *= Magnification[j]
-	GalDict['Mag_'+str(j)]['Realization_0']['Gal_1']['SB']["size"] *= Magnification[j]
-	
-	GalDict['Mag_'+str(j)]['Realization_1']['Gal_0']['SB']["flux"] *= Magnification[j]
-	GalDict['Mag_'+str(j)]['Realization_1']['Gal_1']['SB']["size"] *= Magnification[j]		
-
-
-
-
-# We create the noise data
-
-Pixel_size = 30
 Noise = np.zeros([Pixel_size,Pixel_size,Numb_real])
 
 for i in range(Numb_real):
-	Noise[:,:,i] = 0*0.025*np.random.randn(Pixel_size,Pixel_size)
+	Noise[:,:,i] = 0.8*np.random.randn(Pixel_size,Pixel_size)
 
-# We create the input images
+# Function that changes the radial position of the second galaxy
 
-pixel_size = 30
+def radial_Change(secondDict, radialPosition):
+	"""
+	A function that takes the dictionary of the secondart galaxy and places it at a set radial disp and random angluar position
 
-Flattened_Images = {}
+	Requires
+	--------
 
-for i in range(len(Magnification)):
-	Images = np.zeros([pixel_size,pixel_size,Numb_real])
-	Images_flattened = np.zeros([ np.size(Images)/Numb_real,Numb_real]) 
+	secondDict: The dictionary of the secondary galaxy to have it's radial position changed
+	radialPosition: The final radial displace in px from the centre of the postage stamp
 
-	for j in range(Numb_real):
-		for k in range(2):
+	"""
+	# Check the radial position is on the postage stamp
 
-			temp_image, disc = modPro.user_get_Pixelised_Model(GalDict['Mag_'+str(i)]['Realization_'+str(j)]['Gal_'+str(k)],noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
-			Images[:,:,j] +=temp_image
+	if radialPosition>secondDict['stamp_size'][0] or radialPosition<0 or radialPosition>secondDict['stamp_size'][1]:
+		raise ValueError('The radial position is of the postage stamp')
 
-		Images[:,:,j] +=Noise[:,:,j]
-		Images_flattened[:,j] = Images[:,:,j].flatten()
+	angle = random.random()*(math.pi)*2
 
-
-
+	return np.array([0.5*secondDict['stamp_size'][0] +radialPosition*math.cos(angle),0.5*secondDict['stamp_size'][1] +radialPosition*math.sin(angle)])
 
 
+Radial_Position = np.array([3,6,10,14])
 
-def finding_ML_estimator(magnificiation, imagesFlattened, unlensed_dict,noise, coreNumber, numbCores, numb_real,lensedDict):
+
+def finding_ML_estimator(magnification, unLensedDict, radialPosition, fittingParams,coreNumber, numbCores, numb_real):
 
 	pixel_size = 30
 
@@ -201,36 +177,56 @@ def finding_ML_estimator(magnificiation, imagesFlattened, unlensed_dict,noise, c
 	mywriter = csv.writer(out)
 	mywriter.writerow(['Magnification','Measured Magnification', 'Deviation error'])
 
+	for position in range(coreNumber,len(radialPosition), numbCores):
 
-	for j in range(coreNumber,len(magnificiation), numbCores):
+		for j in range(len(magnification)): # This is the bit where each core will start to do its own magnification
+
+			for secondary_Gal in range(len(unLensedDict)):
+				unLensedDict['Realization_'+str(secondary_Gal)]['Gal_1']['centroid'] = radial_Change(unLensedDict['Realization_'+str(secondary_Gal)]['Gal_1'], radialPosition[position])
+
+			lensedDict = modPro.magnification_Field(unLensedDict,  fittingParams, mag = magnification[j]) # Edit magnification_field function
+
+			Image = np.zeros([Pixel_size,Pixel_size, Numb_real])
+			Images_flattened = np.zeros([Pixel_size**2, Numb_real])
+
+			for i in range(Numb_real):
+			    for k in range(len(lensedDict['Realization_'+str(i)])):
+			        
+			        model_to_add, disc = modPro.user_get_Pixelised_Model(lensedDict['Realization_'+str(i)]['Gal_'+str(k)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
+			        Image[:,:,i] += model_to_add 
+
+			    Image[:,:,i] += Noise[:,:,i] 
+			    Images_flattened[:,i] = Image[:,:,i].flatten()
 
 
-		print "Core " +str(coreNumber) +" is doing magnificiation " +str(Magnification[j])
-		#print lensedDict['Mag_'+str(j)]
-		#deviation_to_add = (imMeas.mag_min((Magnification[j]),imagesFlattened, unlensed_dict, ('flux','size')))
-		#deviation_to_add = np.asscalar(deviation_to_add)-Magnification[j]
-		#error_to_add = 0 
-		print Unlensed_dict
-		print imMeas.mag_likelihood(Magnification[j], ('flux','size',),imagesFlattened, Unlensed_dict)
+			print "Core " +str(coreNumber) +" is doing magnification " +str(Magnification[j])
 
-		#mywriter.writerow([Magnification[j],deviation_to_add,error_to_add])
 
-	
+			deviation_to_add, error_to_add = (imMeas.mag_min(magnification[j],Images_flattened, unLensedDict, fittingParams))
+			deviation_to_add = np.asscalar(deviation_to_add)-magnification[j]
+			
+
+
+			mywriter.writerow([magnification[j],deviation_to_add,error_to_add])
+
 	out.close()
 
 # Data writing code, each core saves the output to a different CSV file
 
-Numb_cores = 1
 
-Process_0 = mp.Process(target = finding_ML_estimator, args = (Magnification, Images_flattened, Unlensed_dict,Noise, 0, Numb_cores, Numb_real, GalDict))
-#Process_1 = mp.Process(target = finding_ML_estimator, args = (Magnification, GalDict, Noise, 1, Numb_cores, Numb_real,))
-#Process_2 = mp.Process(target = finding_ML_estimator, args = (Magnification, GalDict, Noise, 2, Numb_cores, Numb_real,))
-#Process_3 = mp.Process(target = finding_ML_estimator, args = (Magnification, GalDict, Noise, 3, Numb_cores, Numb_real, ))
+
+Numb_cores = 4
+
+
+Process_0 = mp.Process(target = finding_ML_estimator, args = (Magnification, Unlensed_dict, Radial_Position, Fitting_Params, 0, Numb_cores, Numb_real,))
+Process_1 = mp.Process(target = finding_ML_estimator, args = (Magnification, Unlensed_dict, Radial_Position, Fitting_Params, 1, Numb_cores, Numb_real,))
+Process_2 = mp.Process(target = finding_ML_estimator, args = (Magnification, Unlensed_dict, Radial_Position, Fitting_Params, 2, Numb_cores, Numb_real,))
+Process_3 = mp.Process(target = finding_ML_estimator, args = (Magnification, Unlensed_dict, Radial_Position, Fitting_Params, 3, Numb_cores, Numb_real,))
 
 
 Process_0.start()
-#Process_1.start()
-#Process_2.start()
-#Process_3.start()
+Process_1.start()
+Process_2.start()
+Process_3.start()
 
 print 'done'
