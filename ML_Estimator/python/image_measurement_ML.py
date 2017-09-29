@@ -5,9 +5,9 @@ Purpose: Contains the code to implement a maximum-likelihood based estimator for
 Contains routines to evaluate the log-Likelihood, and it's derivatives, as well as supplementary definitions 
 such as mimimisation routines (if applicable), noise estimation from an image, and error estiamtion (e.g. Fisher Matrices).
 
-To Do:
-(17Sept2015):: Add ability to apply a prior to the likelihood (in which case the method maximises a *Posterior* 
-rather than a likelihood. In this case, lnL -> lnP + lnL and d^n(lnL) -> d^n(lnP) + d^n (lnL)
+Update (24th September 2017): Functions have been added to finding log-likelihood for many images with size or magnification as the 
+free parameter. Associated optimization routines have been added. Finite differencing methods for 2nd derivatives have been added
+to allow for error analysis when caluclating magnification field. (D.Dootson)
 
 """
 from matplotlib.pyplot import *
@@ -131,7 +131,7 @@ def fisher_Error_ML(ML, fitParams, image, setParams, modelLookup, useNumericDeri
 
     return np.sqrt(np.diag(Fin))
     
-##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation   ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
+##-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o---- ML Estimation ----o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-o-##
 def find_ML_Estimator(image,fitParams,outputHandle = None, setParams = None, galaxy_centriod = None, second_gal_param = None, secondFitParams = None,modelLookup = None, searchMethod = 'simplex', preSearchMethod = None, Prior = None, bruteRange = None, biasCorrect = 0, calcNoise = None, bcoutputHandle = None, error = 'Fisher', **iParams):
     import scipy.optimize as opt
     import model_Production as modPro
@@ -771,23 +771,33 @@ def combined_logLikelihood(fittingParameter, images_flattened, galDict, fitting 
     import model_Production as modPro
     import surface_Brightness_Profiles as SBPro
     import generalManipulation
-    '''
-    This routine takes a set of images with noise and a secondy galaxy adds the primary galaxy defined by the dict and gives the product of the likelihoods 
-    
-    Requires:
+    """
+    This function takes a set of images with two galaxies and adds the log likelihood for each image with the size of
+    the primary galaxy the only varied parameter.
 
-    fittingParameters: the value of the parameter which can be varied, usally the area
-    images: a 3d numpy array with each sheet a different image
-    galDict: dictionary with each key each realization and then each galaxy an entry within that. The fitted galaxy is gal 0
-    fitting: can be either 'y' or 'n'. If 'y' then -ve of likelihood is returned so that it can be minimsed. 
-    '''
+    Requires
+    --------
+
+    fittingParameter: The value of area that the likelihood wants to be evaulated for. (float)
+    images_flattened: A numpy array of the flattened images, the second index controls which image. (2d Numpy array)
+    galDict: The dictionary used to create the images to be analysed. The key is, galDict['Realizations_x']['Gal_y']
+    where x>=0 and y =0 or 1. (Dict)
+    fitting: Not being used at the moment.
+
+    Returns
+    -------
+
+    lnL: The sum of the Log-likelihood for all the images, NOTE it is really the negative so this function can be passed to an
+    optimization routine. 
+    """
 
     numbImages = len(galDict)
 
     # Creates the models to compare to
-    for i in range(numbImages):
+    for i in range(numbImages): # Saves the fitting parameter in the galaxies' dictionary. 
         galDict['Realization_'+str(i)]['Gal_0']['SB']["size"] = fittingParameter
 
+    ## Creates the model galaxies using the same gaDict with the primary galaxy size set to fittingParameter. 
 
     models = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0],galDict['Realization_0']['Gal_0']["stamp_size"][1],numbImages]) #
 
@@ -796,13 +806,13 @@ def combined_logLikelihood(fittingParameter, images_flattened, galDict, fitting 
         for j in range(len(galDict['Realization_'+str(i)])): 
         
             model_to_add, disc = modPro.user_get_Pixelised_Model(galDict['Realization_'+str(i)]['Gal_'+str(j)], noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = None)
-            models[:,:,i] += model_to_add
+            models[:,:,i] += model_to_add 
 
 
 
     model_flattened[:,i] = models[:,:,i].flatten()
 
-    # find loglikelihood of each realization and multiply together
+    ## Finds the sum of the log-likelihood for all the images. 
 
     lnL = 0
 
@@ -819,20 +829,32 @@ def combined_logLikelihood(fittingParameter, images_flattened, galDict, fitting 
  #fittingParameter, lnL    
 
 
-def combinded_min(x0,images, galParams):
+def combinded_min(x0,imagesFlattened, galParams):
     import scipy.optimize as opt
-    '''
-    Finds ML estimator for the size of the galaxy.
+    
+    """
+    This function calls fmin, a simplex optimization routine, to try and maximise the log-likelihood (it really minimses the -ve of
+    the log-likelihood). Note that only the size of the primary galaxy can be varied in combined_logLikelihood therefore we can only 
+    fit size in this routine. 
 
-    Requires:
-    x0: initial guess for the size of the galaxy
-    images: numpy array with each row a different image
-    galParams:  
-    '''
+    Requires
+    -------
 
-    mlValue = opt.fmin(combined_logLikelihood, x0 = x0, xtol=0.0001,args = (images,galParams, 'y'))
+    x0: The initial guess of the primary galaxy size (take from galaxy dictionary). (float)
+    imagesFlattened: An array of the flattened images to fit. The second index denotes which galaxy. (2D numpy array)
+    galParams: Dictionary of the galaxies used to create the images. The key is galDict['Realizations_x']['Gal_y'] 
+    where x>=0 and y =0 or 1. (Dict)
 
-    mlError = fisher_Error_ML(mlValue, ('size',), images, galParams, None)
+    Returns 
+    -------
+
+    mlValue: Maximum likelihood estimator of the size. (float)
+    mlError: The error on the ML value of size, calculated with a fisher error. (float)
+    """ 
+    
+    mlValue = opt.fmin(combined_logLikelihood, x0 = x0, xtol=0.0001,args = (imagesFlattened,galParams, 'y')) # Uses simplex optmization
+
+    mlError = fisher_Error_ML(mlValue, ('size',), imagesFlattened, galParams, None) #Error is calculated using a fisher error
 
     return mlValue, mlError
 
@@ -848,25 +870,33 @@ def mag_likelihood(mu, images_flattened, galDict, fittingParams):
     import matplotlib.pyplot as plt
     import generalManipulation
 
-    '''
-    This routine calculates the -ve of the likelihood given a value for the magnification field.
-    
-    Requires:
+    """
+    This function returns the (-ve) log-likelihood of all the inputted images when a given magnification field is applied.
 
-    fittingParameters: the value of the parameter which can be varied, usally the area
-    magParams: Tell code which galaxy parameters are varied by the mag field, either size, flux or both
-    images_flattened: a numpy array with the flatteren images. Should be magnifed
-    galDict: dictionary with each key each realization and then each galaxy an entry within that. The fitted galaxy is gal 0. 
+    Requires
+    --------
 
-    '''
+    mu: The value of the magnification field to be applied to the dictionary. (float)
+    images_flattened: An array of the flattened images to fit. The second index denotes which galaxy. (2D numpy array)
+    galDict: The UNLENSED diction used to describe the galaxies. The key is galDict['Realizations_x']['Gal_y'] 
+    where x>=0 and y =0 or 1. (Dict)
+    fittingParams: A tuple containing which parameters the magnification field should affect, i.e. ('size',), ('flux',) or
+    ('size','flux',). (Tuple)
+
+    Returns
+    -------
+
+    lnL: The (-ve) sum of all the log-likelihoods for a given magnification field. The -ve is returned so that the 
+    function can be maximsed. (float)
+    """
     numbImages = len(galDict)
 
-    # Updates the magnification value and applies the magnification to the size and flux
+    ## Updates the magnification value and applies the magnification to the size and flux
 
-    lensedDict = modPro.magnification_Field(galDict, fittingParams, mu)
+    lensedDict = modPro.magnification_Field(galDict, fittingParams, mu) 
 
 
-    # Creates the models 
+    ## Creates the models 
 
     models = np.zeros([galDict['Realization_0']['Gal_0']["stamp_size"][0],galDict['Realization_0']['Gal_0']["stamp_size"][1],numbImages]) #
 
@@ -883,39 +913,51 @@ def mag_likelihood(mu, images_flattened, galDict, fittingParams):
 
 
 
-    # Finds log likelihood and returns the value
+    ## Finds log likelihood and returns the value
 
 
     lnL = 0
 
     for i in range(numbImages):
-        tpixlnL = np.power(images_flattened[:,i]-model_flattened[:,i],2.)#np.power(images_flattened[:,i]-model_flattened[:,i],2.)
+        tpixlnL = np.power(images_flattened[:,i]-model_flattened[:,i],2.)
         lnL += tpixlnL.sum()*0.5/(galDict['Realization_'+str(i)]['Gal_0']['noise']**2.)
 
 
-
-    #print 'lnL', lnL
     return lnL
 
 
 
-def mag_min(x0,images, unlensedParams, fittingParams):
+def mag_min(x0,imagesFlattened, unlensedParams, fittingParams):
 
     import scipy.optimize as opt
-    '''
-    Finds ML estimator for the size of the galaxy.
+    """
+    This function calls fmin, a simplex optimization routine, to try and maximise the log-likelihood (it really minimses the -ve of
+    the log-likelihood) subject to varitation in the magnification field. Note that only the size of the primary galaxy can be varied 
+    in combined_logLikelihood therefore we can only fit size in this routine.    
 
-    Requires:
-    x0: initial guess for the size of the galaxy
-    images: numpy array with each row a different image
-    galParams: unlensed dictionary, i.e. gives all dictionay params apart from those being fit.
-    fittingParams: Tuple telling if either/or flux should be fit
-    '''
+    Routine
+    -------
 
-    mlValue = opt.fmin(mag_likelihood, x0 = x0, xtol = 0.0001,args = (images, unlensedParams, fittingParams), full_output = 1)
-    mlError = fisher_Error_ML(mlValue[0], fittingParams, images, unlensedParams, None, useNumericDeriv = True, ml_Eval = mlValue[1] )
+    x0: Initial guess of the magnificaition field. (float)
+    imagesFlattened: An array of the flattened images to fit. The second index denotes which galaxy. (2D numpy array)
+    unlensedParams: The UNLENSED diction used to describe the galaxies. The key is galDict['Realizations_x']['Gal_y'] 
+    where x>=0 and y =0 or 1. (Dict)
+    fittingParams: A tuple containing which parameters the magnification field should affect, i.e. ('size',), ('flux',) or
+    ('size','flux',). (Tuple)
 
-    #mlError = fisher_Error_ML(mlValue, ('magnification',), images, galParams, None)
+    Returns
+    -------
+
+    mlValue: Maximum likelihood estimator of the magnification field. (float)
+    mlError: The error on the ML value of size, calculated with a fisher error. The derivative is evaluated using a finite difference
+    method. This requires further function evaluation and so could be made more efficent if previous evaluations from optimization
+    function are used to calculate the error. (float)
+
+    """
+
+    mlValue = opt.fmin(mag_likelihood, x0 = x0, xtol = 0.0001,args = (imagesFlattened, unlensedParams, fittingParams), full_output = 1)
+    mlError = fisher_Error_ML(mlValue[0], fittingParams, imagesFlattened, unlensedParams, None, useNumericDeriv = True, ml_Eval = mlValue[1] )
+
 
     return mlValue[0], mlError
 
