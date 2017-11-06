@@ -560,7 +560,14 @@ def get_logLikelihood(parameters, pLabels, image, setParams, modelLookup = None,
     pixlnL = np.array([])
     lnL = 0
     absSign = signModifier/abs(signModifier)
+
     if(len(image.shape) == len(model.shape)+1):
+
+        if(len(image.shape) == 2 and np.prod(image.shape) == model.shape[-1]):
+            print "Model Shape:", model.shape
+            print "Image Shape:", image.shape
+            raise ValueError("get_logLikelihood: Have you remember to flatten the last two axes of the input image array?")
+        
         #print "Considering sum over images", pLabels, parameters
         for i in range(image.shape[0]):
             tpixlnL = absSign*np.power(image[i]-model,2.)
