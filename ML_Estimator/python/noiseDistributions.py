@@ -1,8 +1,6 @@
 
 # coding: utf-8
 
-# In[ ]:
-
 import numpy as np;
 import scipy;
 import scipy.stats as scist;
@@ -10,8 +8,6 @@ import scipy.interpolate as sciInterp;
 from scipy.stats import poisson, norm, uniform;
 import pylab as pl
 
-
-# In[ ]:
 
 def pdf_conv(D1, D2):
     #Works for continous PDFs is both deifned over the same grid - edit to allow different grid, but same grid intervals
@@ -21,9 +17,6 @@ def pdf_conv(D1, D2):
     grid = np.linspace(supp[0], supp[1], 1000)
     
     return grid, scipy.convolve(D1.pdf(grid), D2.pdf(grid), 'same')
-
-
-# In[ ]:
 
 def pdf_conv_dis_cont(D,C):
     #Puts discrete PMF onto continuous grid via interpolation: likely incorrect
@@ -40,9 +33,6 @@ def pdf_conv_dis_cont(D,C):
     ax.plot(dgrid)
     
     return grid, scipy.convolve(C.pdf(grid), Dpmf, 'same')
-
-
-# In[ ]:
 
 def pdf_conv_dis_cont_full(D,C):
     #Works, likely slow
@@ -68,10 +58,6 @@ def pdf_conv_dis_cont_full(D,C):
     conv[-1] = 0.;
         
     return grid, conv
-    
-
-
-# In[ ]:
 
 def N_Likelihood(phot, spec):
     if "sigma" in spec:
@@ -94,9 +80,6 @@ def PN_Likelihood(phot, spec):
     C = norm(0., spec['readout']/spec['ADUf']);
     
     return pdf_conv_dis_cont_full(D,C);
-
-
-# In[ ]:
 
 def inverse_Sample(xt,ft, nSamples = 1):
     from math import fabs
@@ -135,8 +118,51 @@ def inverse_Sample(xt,ft, nSamples = 1):
     #Sample
     return res
 
+def add_PN_Noise(vals, readnoise, gain, sky):
+    """
+    Return the image (in photons) as observed through the telescope, adding noise processes
+    :param vals:
+    :param readout:
+    :param gain:
+    :param sky:
+    :return:
+    """
 
-# In[ ]:
+    valsShape = vals.shape
+    vals = vals.flatten()
+
+    # Add sky background
+    vals += float(sky)
+
+    # Sample from poisson
+    vals = np.random.poisson(vals).astype(np.float64)
+
+    # Remove sky
+    vals -= sky
+
+    # Add read noise
+    vals += np.random.normal(loc = 0, scale = readnoise, size = vals.shape[0])
+
+    # Digitize and return to photons
+    # 1000. is an offset to deal with rounding close to zero. 0.5 ensures rounds up in appropriate setting
+    vals = gain * ( (1000. + vals/gain + 0.5).astype(np.int) - 1000.)
+
+    # Reshape back into input
+    return vals.reshape(valsShape)
+
+def estimate_PN_noise(vals, readnoise, gain, sky):
+    """
+    Estimate the mean noise properties for the poisson-normal system
+    :param vals:
+    :param readout:
+    :param gain:
+    :param sky: Sky background *per pixel*
+    :return:
+    """
+
+    vals[vals<0] = 0.
+    # Poisson: sigma^2 = sky+vals. Normal: sigma = readout
+    return sky+vals + (readnoise*readnoise)
 
 if __name__ == "__main__":
     import argparse

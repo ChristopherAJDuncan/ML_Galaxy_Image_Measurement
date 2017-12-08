@@ -6,20 +6,30 @@ import python.surface_Brightness_Profiles as SBPro
 import python.image_measurement_ML as imMeas
 import numpy as np
 import python.noiseDistributions as nDist
+import copy as copy
 
 #Single Run - Derivative
 print 'Running'
 
 imageParams = modPro.default_ModelParameter_Dictionary()
-imageParams['SNR'] = 20.
+imageParams['SNR'] = 200.
 imageParams["SB"]['e1'] = 0.
 imageParams["SB"]['e2'] = 0.
-imageParams["SB"]['size'] = 2.0
+imageParams["SB"]['size'] = 5.0
 imageParams["SB"]['flux'] = 4.524
-imageParams['stamp_size'] = [30,30]
+imageParams['stamp_size'] = np.array([30,30])
 imageParams['centroid'] = (np.array(imageParams['stamp_size'])+1)/2.
 
+#iParams['modelType'].lower() == 'gaussian'
+
 print "Image Params:", imageParams
+
+imageParams2 = copy.deepcopy(imageParams)
+imageParams2["SB"]["size"] = 2.
+imageParams2["SB"]["flux"] /= 4 #To counteract difference in size
+imageParams2['centroid'] += 10.
+
+imageParams = [imageParams, imageParams2]
 
 #der = ['e1', 'e2']
 der = None
@@ -28,8 +38,12 @@ der = None
 #image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = 'Gaussian', outputImage = True, Verbose = True, sbProfileFunc = modPro.gaussian_SBProfile)
 #image, imageParams = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = modPro.gaussian_SBProfile)
 
+image, disc = modPro.get_Pixelised_Model(imageParams, noiseType = "Gaussian", outputImage = True, Verbose = True)
+print "FLux check: ", image.sum()
+
 ##Surface Brightness profile routine
-image, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
+#image, disc = modPro.user_get_Pixelised_Model(imageParams, noiseType = None, outputImage = True, sbProfileFunc = SBPro.gaussian_SBProfile_CXX, der = der)
+
 
 ### User-defined model with Guassian noise
 #image = np.genfromtxt('./TestPrograms/Hall_Models/fid_image.dat')
@@ -79,23 +93,23 @@ print "Produced CXX image"
 #print 'Final Check:: sumImage, sumImageSB, ratioSum(image/SB), flux:', image.sum(), imageSB.sum(), image.sum()/imageSB.sum(), imageParams['flux']
 
 ### Test log-likelihood recovery
-nIter = 10000
-import time
-t1 = time.time()
-for i in range(nIter):
-    wrongLL = imMeas.get_logLikelihood([1.],['size'], image.flatten(), imageParams)
-t2 = time.time()
-rightLL  = imMeas.get_logLikelihood([2.], ['size'], image.flatten(), imageParams)
+# nIter = 10000
+# import time
+# t1 = time.time()
+# for i in range(nIter):
+#     wrongLL = imMeas.get_logLikelihood([1.],['size'], image.flatten(), imageParams)
+# t2 = time.time()
+# rightLL  = imMeas.get_logLikelihood([2.], ['size'], image.flatten(), imageParams)
 
 
-print "Checking logLikelihood: "
-print "Right:", rightLL
-print "wrong:", wrongLL
+# print "Checking logLikelihood: "
+# print "Right:", rightLL
+# print "wrong:", wrongLL
 
-if(nIter > 1):
-    print "Time check:", t2-t1, (t2-t1)/nIter
+# if(nIter > 1):
+#     print "Time check:", t2-t1, (t2-t1)/nIter
 
-exit()
+# exit()
 
 import pylab as pl
 f = pl.figure()

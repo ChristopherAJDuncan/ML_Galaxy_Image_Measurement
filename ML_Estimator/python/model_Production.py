@@ -1,7 +1,11 @@
 """
-Module that contains the general routines for production of the pixelised (and potentially noisy) surface brightness models and its derivatives. Includes routines to utilise GALSIM, however testing confirms that this does not behave well in producing derivatives, as well as a `user-defined` pixelised model production routine that performs the convolutions natively. Testing confirms that the latter is well behaved and produced sensible results.
+Module that contains the general routines for production of the pixelised (and potentially noisy) surface brightness models and its derivatives. 
+Includes routines to utilise GALSIM, however testing confirms that this does not behave well in producing derivatives, as well as a `user-defined` 
+pixelised model production routine that performs the convolutions natively. Testing confirms that the latter is well behaved and produced sensible results.
 
-NOTE: This routine sets up the default model parameters as well as the means to produce the model images. It does this using individual subroutines ad function, showever this is a situation ripe for the use of a defined class. This is left to future work if desired.
+NOTE: This routine sets up the default model parameters as well as the means to produce the model images. 
+It does this using individual subroutines and function, however this is a situation ripe for the use of a defined class. 
+This is left to future work if desired.
 
 Author: cajd
 Touch Date: 28 May 2015
@@ -28,9 +32,12 @@ def default_ModelParameter_Dictionary(**setters):
     --- PSF_Type: Corresponds to the PSF model used in producing the image
     ____ 0: No PSF
     ____ `Gaussian` or 1: Gaussian
+    ---- 'Airy' or 2: Airy
     --- PSF_size
     --- PSF_Gauss_e1
     --- PSF_Gauss_e2
+    --- PSF_Airy_lambda
+    --- PSF_Airy_diameter
 
     -- Surface Brightness Profile Dictionary (SB):
     --- modelType: (case insensitive)
@@ -46,18 +53,19 @@ def default_ModelParameter_Dictionary(**setters):
     """
 
     ### PSF Declaration
-    PSFDict = dict(PSF_Type = 0, PSF_size = 0.05, PSF_Gauss_e1 = 0.0, PSF_Gauss_e2 = 0.0)
+    PSFDict = dict(PSF_Type = 2, PSF_size = 0.05, PSF_Gauss_e1 = 0.0, PSF_Gauss_e2 = 0.0,
+                   PSF_Airy_lambda = 8.e-7, PSF_Airy_diameter = 1.2) # in m
 
     ## SB Declaration
-    SBDict = dict(modelType = 'gaussian', size = 1.41, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.], bg = 0.)
+    SBDict = dict(modelType = 'gaussian', size = 2, e1 = 0., e2 = 0., flux = 10, magnification = 1., shear = [0., 0.], bg = 0.)
 
-    imgshape = np.array([10, 10])
-    dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20., stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict)
+    imgshape = np.array([30, 30]) # Changed  orginally ([10,10])           
+    dct = dict(centroid = (np.array(imgshape)+1)/2., noise = 1., SNR = 20, stamp_size = imgshape, pixel_scale = 1., SB = SBDict, PSF = PSFDict) 
 
     ## Use this to set SB and PSF parameters - RECURSIVE
     ##set_modelParameter(dct, setters.keys(), setters.values())
 
-    update_Dictionary(dct, setters)
+    update_Dictionary(dct, setters) # Combines the dictionaries
 
     return dct
 
@@ -65,7 +73,9 @@ def default_ModelParameter_Dictionary(**setters):
 def unpack_Dictionary(dic, requested_keys = None):
     from generalManipulation import makeIterableList
     """
-    Helper routine which returns a list of dictionary values corresponding to the list of requested keys input. If no keys are input, the full list of values corresponding to the full dictionary keys list (in stored order) is returned. Used to extract model parameters. Automatically searchs all sub-directory levels defined (hardwired to SB and PSF only)
+    Helper routine which returns a list of dictionary values corresponding to the list of requested keys input. If no keys are input, 
+    the full list of values corresponding to the full dictionary keys list (in stored order) is returned. Used to extract model parameters. 
+    Automatically searchs all sub-directory levels defined (hardwired to SB and PSF only)
     """
 
     ##This could be generalised if a list of subdicts (currently SB and PSF could be passed), or inferred
@@ -119,7 +129,8 @@ def update_Dictionary(d, u):
 def seperate_Keys_byModel(der, vals = None, refParam = None):
     from copy import deepcopy
     """
-    Takes as input a list which contains the labels of all the parameters considered, and seperates into two lists corresponding to SurfaceBrightness (SB), and PSF models (PSF)
+    Takes as input a list which contains the labels of all the parameters considered, and seperates into two lists corresponding to SurfaceBrightness (SB), 
+    and PSF models (PSF)
     Ignores *others* for now (anything not PSF or SB)
 
     Requires:
@@ -172,10 +183,11 @@ def set_modelParameter(Dict, param_labels, param_values):
     from copy import deepcopy
     from generalManipulation import isIterableList, makeIterableList
     """
-    Sets model Parameters (as defined above) by input lists. As opposed to update_Dictionary, this routine allows for the keys to be put in without defining which sub-dictionary they belong to, as seperate_Keys_byModel seperates out into sub-dictionaries specified in the default declaration
+    Sets model Parameters (as defined above) by input lists. As opposed to update_Dictionary, this routine allows for the keys to be put in without 
+    defining which sub-dictionary they belong to, as seperate_Keys_byModel seperates out into sub-dictionaries specified in the default declaration
 
     Requires:
-    --Dict: model Parameter dictionary to be modified
+    -- Dict: model Parameter dictionary to be modified
     -- param_labels: list of parameter labels to be modified in Dict
     -- param_values: list of values corresponding to parameters in param_labels.
     """
@@ -200,7 +212,8 @@ def set_modelParameter(Dict, param_labels, param_values):
 def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs):
     from copy import deepcopy
     """
-    Wrapper function for get Pixelised model, which returns the image according to Params, where parameter with key 'xKey' is set to value 'x'. By default uses the native pixelised model image production routine.
+    Wrapper function for get Pixelised model, which returns the image according to Params, where parameter with key 'xKey' is set to value 'x'. 
+    By default uses the native pixelised model image production routine.
 
     Requires:
     --x: Values to be set in dictionary Params
@@ -249,7 +262,9 @@ def get_Pixelised_Model_wrapFunction(x, Params, xKey, returnOrder = 1, **kwargs)
 
 def SNR_Mapping(model, var = None, SNR = None):
     """
-    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition. Model passed in should be noise-free. If SNR is passed, std of pixel noise is returned. If var is passed (must be variance of pixel noise), SNR is returned. One but not both must be passed.
+    Uses GREAT 08 filter-matched version of SNR, consistent with GALSIM definition. Model passed in should be noise-free. 
+    If SNR is passed, std of pixel noise is returned. If var is passed (must be variance of pixel noise), SNR is
+    returned. One but not both must be passed.
     """
     if(var is None and SNR is not None):
         return np.sqrt(np.power(model,2.).sum()/(SNR*SNR))
@@ -262,7 +277,8 @@ def SNR_Mapping(model, var = None, SNR = None):
 
 def get_Model_Lookup(setParams, pLabel, pRange, dP, **modelFuncArgs):
     """
-    Create a lookup table for the model creation - Useful only for the 1D or 2D case, where this corresponds to a significant decrease in run-time (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] 
+    Create a lookup table for the model creation - Useful only for the 1D or 2D case, where this corresponds to a significant decrease in run-time 
+    (or any case where range/dP < nEval*nGal [nEval - function evaluations to get ML point; nGal - number of ML points] 
 
     Requires:
     --- setParams - dictionary containign the default value for all other model parameters
@@ -382,19 +398,24 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     Native method of image construction using a pixel response function and PSF model, for specified surface brightness profile (10Jul2015)
 
     Tests:
-    First-order analytic bias on e1 = 0.3 agrees well with A Halls version. Comparison of image and up to second order derivatives compare to < 10% with matched A. Hall version.
+    First-order analytic bias on e1 = 0.3 agrees well with A Halls version. Comparison of image and up to second order derivatives compare 
+    to < 10% with matched A. Hall version.
 
-    Returns a pixelised image set according to Params and using sbProfileFunc. Use of der allows one to specify whether to return derivatives. Uses an enlargementFactor and fineGridFactor to deal with cases where the PS is smaller than the support of the SB profile, and sub-pixel variations.
+    Returns a pixelised image set according to Params and using sbProfileFunc. Use of der allows one to specify whether to return derivatives. 
+    Uses an enlargementFactor and fineGridFactor to deal with cases where the PS is smaller than the support of the SB profile, and sub-pixel variations.
 
     Requires:
     --- Params: dictionary specifying model.
-    --- inputImage: image input. If none, image is produced according to Params. Allows one to input a noise free image and add noise on the fly without re-evaluating (e.g. in using multiple noise realisations in sims.
+    --- inputImage: image input. If none, image is produced according to Params. Allows one to input a noise free image and add noise on the fly without 
+        re-evaluating (e.g. in using multiple noise realisations in sims.
     --- Verbose: If true, more is output to screen. Useful for debugging.
     --- noiseType: Specifies noise model. In none, no noise is added to image. Accepted values:
     ___ `Gaussian`
     --- outputImage: IGNORED.
     --- sbProfileFunc: link to function which specifies the SB profile
-    --- der: List of parameters specifying the derivative wrt which the image is produced. Length of der sets the order of the derivative, and each element specifies parameter: e.g. [size, e1] gives d^2(SB)/(dTde1). Derivatives are taken around values specified in Params. Only analytic derivative are coded up at this stage.
+    --- der: List of parameters specifying the derivative wrt which the image is produced. Length of der sets the order of the derivative, 
+        and each element specifies parameter: e.g. [size, e1] gives d^2(SB)/(dTde1). Derivatives are taken around values specified in Params. 
+        Only analytic derivative are coded up at this stage.
     -- sbFuncArgs: Dictionary of argements not specifed otherwise which can be passed to the SB profile function.
 
     Returns:
@@ -414,9 +435,12 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
     if(iParams['SB']['e1']*iParams['SB']['e1'] + iParams['SB']['e2']*iParams['SB']['e2'] >= 1. or iParams['SB']['size'] <= 0):
         return np.zeros(iParams['stamp_size'])
 
-    if(inputImage is None):
-        ###Get Surface Brightness image on enlarged grid. This is to take into account that the surface brightness profile may be non-zero outside the Postage Stamp boundaries set.
-        ## Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, and this can be turned off by setting enlargementFactor = 1.
+    if(inputImage is None):   
+        ###Get Surface Brightness image on enlarged grid. This is to take into account that the surface brightness profile may be non-zero outside the 
+        #Postage Stamp boundaries set.
+        ## Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, 
+        #and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, 
+        #and this can be turned off by setting enlargementFactor = 1.
         if(iParams['PSF']['PSF_Type']):
             if(iParams['PSF']['PSF_size'] <= 0.):
                 raise ValueError('user_get_Pixelised_Model - PSF Size is invalid (Zero or negative)')
@@ -439,7 +463,8 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         
         cen = iParams['centroid'].copy()
 
-        ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
+        ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part 
+        ## of total image
         ## This could also be done dy readjusting according to distance from centre.
 
         lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
@@ -449,10 +474,13 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
         ## Boundary stores the sub-section of the enlarged PS which contains the input stamp
         boundary = np.array(0.5*(enlargementFactor-1)*np.array(iParams['stamp_size'])).astype(int)
         
-        ''' Note: No recovery of final subarray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
+        ''' Note: No recovery of final subarray is needed provided that xy is evaluated on the same scale as that of size 
+        *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
         if(sbProfileFunc is None):
             raise RuntimeError('user_get_Pixelised_Model - sbProfileFunc must be passed')
 
+
+        #print "Calling sb profile function with image params: ", iParams # Commented out as really annoying
         sb = sbProfileFunc(xy, cen, iParams['SB']['size'], iParams['SB']['e1'], iParams['SB']['e2'], iParams['SB']['flux'], der = SBDer, **sbFuncArgs)
 
         ''' Get the PSF model and convolve (if appropriate) '''
@@ -540,7 +568,7 @@ def user_get_Pixelised_Model(Params, inputImage = None, Verbose = False, noiseTy
             ##Apply Gaussian radnom noise to each pixel using a Guassian model
             ## Get Noise Variance by SNR
             iParams['noise'] = SNR_Mapping(Res, SNR = iParams['SNR']) ##This preserves flux
-            
+            iParams['noise']
             #print 'User defined noise variance taken to be:', iParams['noise']
             
             ## Apply Noise Variance
@@ -557,14 +585,17 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     import math
     import os
     """
-    DEPRECATED GALSIM VERSION. The user is advise to take care if using this version, as development has not considered this method of production for the majority of the development cycle.
+    DEPRECATED GALSIM VERSION. The user is advise to take care if using this version, as development has not
+    considered this method of production for the majority of the development cycle.
     Routine to return as 2D numpy array the model which will be fitted against the image
 
-    1st incarnation ignores the PSF, but sets up an elliptical Gaussian, defined as a Gaussian with an applied ellipticty defined in Params
+    1st incarnation ignores the PSF, but sets up an elliptical Gaussian, defined as a Gaussian with an applied
+    ellipticty defined in Params
 
     When used as part of the ML estimator method, noise should not be applied
 
-    If sbProfileFunc is passed, then method will attempt to produce an image using the GALSIM interpolate model. sbProfuileFunc must accept as arguments:
+    If sbProfileFunc is passed, then method will attempt to produce an image using the GALSIM interpolate model.
+    sbProfuileFunc must accept as arguments:
     --grid
     --centroid
     --image Size
@@ -572,15 +603,32 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     --e2
     --total flux
 
+    :param Params: Model dictionary, or list of model dictionary. If list, then all images are superimposed onto final
+                image.
+
     NOTE:
-    -- If sbProfileFunc is passed, then in the cases where the galaxy is large/elliptical enough that the profile extends (is non-zero) beyond the postage stamp size passed in, then the efective flux assigned using the sbProfileFunc method is different to the GALSIM default. This is because the GALSIM default assigns flux by integrating over the whole model, thus the sum of pixels within the PS will be smaller than the acual flux. In contrast, whilst the sbProfileFunc assigns a total flux in the SB profile function itself, the pixel counts assigned by GALSIM aim to get sum(image) = flux within the PS: thus the latter assumes that the whole SB profile fits within the image.
-    -- The use of ``enlargementFactor'' allows the analytic, user-specified SB profile to be evaluated on effectively a larger grid, so that the flux assigned is indeed the total flux, and not the total flux within the postage stamp. The residual to the GALSIM default Gaussian class is verified to <~1% for the circular case, but not for any case with ellipticty (15th June 2015 cajd)
+    -- If sbProfileFunc is passed, then in the cases where the galaxy is large/elliptical enough that the profile extends (is non-zero)
+       beyond the postage stamp size passed in, then the efective flux assigned using the sbProfileFunc method is different to the GALSIM default. 
+       This is because the GALSIM default assigns flux by integrating over the whole model, thus the sum of pixels within the PS will be smaller 
+       This is because the GALSIM default assigns flux by integrating over the whole model, thus the sum of pixels within the PS will be smaller
+       than the acual flux. In contrast, whilst the sbProfileFunc assigns a total flux in the SB profile function itself, the pixel counts assigned by
+       GALSIM aim to get sum(image) = flux within the PS: thus the latter assumes that the whole SB profile fits within the image.
+    -- The use of ``enlargementFactor'' allows the analytic, user-specified SB profile to be evaluated on effectively a larger grid, so that the flux 
+       assigned is indeed the total flux, and not the total flux within the postage stamp. The residual to the GALSIM default Gaussian class is verified to 
+       <~1% for the circular case, but not for any case with ellipticty (15th June 2015 cajd)
 
     ISSUES:
-    -- Where the sbProfileFunc does not correspond to a traditional surface brightness profile (e.g. when considering derivatives), then there may the the unusual case where the flux defined as the sum over the surface brightness grid is within machin precision of zero. In this case, when trying to define a GALSIM interpolated image object, the assertion "abs(flux - flux_tot) < abs(flux_tot)" will fail and GALSIM will crash. This can be hacked in the following code by adding a constant flux sheet to the SB profile and subtracting this off, however if GALSIM is compiled without assertions then the error will not occur, but nonsense results may be output. This was one of the reasons why an authored `user-defined` pixelised model was written and applied.
+    -- Where the sbProfileFunc does not correspond to a traditional surface brightness profile (e.g. when considering derivatives), 
+       then there may the the unusual case where the flux defined as the sum over the surface brightness grid is within machin precision of zero. 
+       In this case, when trying to define a GALSIM interpolated image object, the assertion "abs(flux - flux_tot) < abs(flux_tot)" will fail and 
+       GALSIM will crash. This can be hacked in the following code by adding a constant flux sheet to the SB profile and subtracting this off, 
+       however if GALSIM is compiled without assertions then the error will not occur, but nonsense results may be output. This was one of the 
+       reasons why an authored `user-defined` pixelised model was written and applied.
 
     **WARNING**
-    It is known that the GALSIM routine defined here produces a Gaussian SB profile which is different than the user-defined models otherwise used. Also, where the SB prfile function is passed in, large differences may also be observed where GALSIM is allowed to draw and pixelate, compared to user (cajd) defined pixelation routines. Care must therefore be taken when comparing these routines.
+    It is known that the GALSIM routine defined here produces a Gaussian SB profile which is different than the user-defined models otherwise used. 
+    Also, where the SB prfile function is passed in, large differences may also be observed where GALSIM is allowed to draw and pixelate, 
+    compared to user (cajd) defined pixelation routines. Care must therefore be taken when comparing these routines.
     
     """
     import galsim
@@ -594,6 +642,13 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     if(additionalConstantFlux != 0):
         raise ValueError('get_pixelised_model - additionalConstantFlux takes a dis-allowed value at this point of the code. I cannae let you do that captain.')
 
+    ## Set up multiple-model fitting proceedure
+    nModels = 1
+    if isinstance(iParams, (list, tuple)):
+        nModels = len(iParams)
+    else:
+        iParams = [iParams]
+
     ##Set up random deviate, which is used to set noise on image
     if(noiseType is not None):
         seed = int(8241573*time.time()) ##This will need editing to produce a more fully random seed
@@ -604,145 +659,247 @@ def get_Pixelised_Model(Params, noiseType = None, Verbose = False, outputImage =
     Alternative method is to specify the model on a fine grid, and set as galsim image, then as GSObject which is an interpolated image. Use this method if evaluating pixelsised version of the derivative of the SB profile
     Function will be evaluated on a finer grid than the final version. This shold be quick since entireley analytic, therefore should not matter how fine the grid is
     '''
-    if(sbProfileFunc is not None):
-        ## 19th May 2015: Known that this implementation does not work yet. Pixel scale needed for image. Ignored for now.
-        #raise RuntimeError('get_Pixelised_Model - sbProfileFunc does not work yet')
-        if(Verbose):
-            print '\n Constructing GALSIM image using user-defined function \n'
-            
-        ##Set enlargmentFactor, which sets the size of the grid over which the SB profile to be interpolated is produced. This ensures that if the PS is too small to contain the full SB profile, the flux is set consistently to the total flux of the profile, and not just the flux which falls within the PS. Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, and this can be turned off by setting enlargementFactor = 1.
-        ## NOTE: it is not recommended to turn off enlargementFactor, since the use of the interpolated image can differ to GALSIM default by a large amount depending on how the renormalisation factor is used when defining the interpolated image
-        enlargementFactor = int(5*iParams['size']/(np.amin(iParams['stamp_size'])*0.7)+1)
-        tempStampSize = enlargementFactor*np.array(iParams['stamp_size'])
-        if(Verbose):
-            print 'enlargement factor is:', enlargementFactor, tempStampSize
-
-
-        ##Evaluate user-defined function on a fine grid
-        xy = [np.linspace(1, tempStampSize[0], tempStampSize[0]), \
-              np.linspace(1, tempStampSize[1], tempStampSize[1])]
-
-        ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
-        #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
-        
-        cen = iParams['centroid'].copy()
-
-        ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
-        ## This could also be done dy readjusting according to distance from centre.
-        lOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams['stamp_size'][1])
-        cen[0] = cen[0] + lOffset
-        cen[1] = cen[1] + rOffset
-
-
-        ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
-
-        sb = sbProfileFunc(xy, cen, iParams['size'], iParams['e1'], iParams['e2'], iParams['flux'], **sbFuncArgs)
-
-        #Use to debug the form of the surface brightness profile
-        '''
-        import pylab as pl
-        f = pl.figure()
-        ax = f.add_subplot(111)
-        im = ax.imshow(sb, interpolation = 'nearest')
-        pl.colorbar(im)
-        print 'SB flux check:', sb.sum()
-        pl.show()
-        '''
-
-        ## Set up as a GALSIM interpolated image. To do this, one must set the flux normalisation value. How this is done is an open question: setting it to sb.sum assumes that the sb is constructed on a pixel scale, and that the full flux of the image is contained in the postage stamp, or it may mean that the flux only reflects that which is contained in the PS and thus is not rescaled to contain the full model flux. Setting it to iParams['flux'] may cause unwanted renormalisation in the image if the PS is too small to contain the entire model.
-        ## Note, use of the Guassian model with no ellipticity agrees with GALSIM in both cases to sub-% *if enlargementFactor is used*. If not, then differences (GALSIM_Default - Interpolated)  can be as large as : -20 per pixel, factor of 3 in PS flux using flux =  sb.sum(), and -10:60 per pixel, factor of 1.01 in PS flux using flux = iParams['flux'] (10x10, rs = 6.)
-
-        if(np.absolute(sb.sum()) < 10**(-11)):
-            additionalConstantFlux = 0.#(2.*10.**(-11))/np.prod(sb.shape)
-
+    image = np.zeros(iParams[0]["stamp_size"])
+    PS = []
+    for iModel in range(nModels):
+        if(sbProfileFunc is not None):
+            ## 19th May 2015: Known that this implementation does not work yet. Pixel scale needed for image. Ignored for now.
+            #raise RuntimeError('get_Pixelised_Model - sbProfileFunc does not work yet')
             if(Verbose):
-                print 'Using additional flux due to machine precision requirements in use of GALSIM'
+                print '\n Constructing GALSIM image using user-defined function \n'
+            
+            ##Set enlargmentFactor, which sets the size of the grid over which the SB profile to be interpolated is produced. This ensures that if the PS is too small to contain the full SB profile, the flux is set consistently to the total flux of the profile, and not just the flux which falls within the PS. Ideally, enlargement factor should be set to n*sigma along the major axis of the image. 0.7 accounts for the fact that cos(theta) is at maximum 0.7, and that enlargement should occur equally in x- and y- direction. Larger enlargement factors wil slow down the process, and this can be turned off by setting enlargementFactor = 1.
+            ## NOTE: it is not recommended to turn off enlargementFactor, since the use of the interpolated image can differ to GALSIM default by a large amount depending on how the renormalisation factor is used when defining the interpolated image
+            enlargementFactor = int(5*iParams[iModel]["SB"]['size']/(np.amin(iParams[iModel]['stamp_size'])*0.7)+1)
+            tempStampSize = enlargementFactor*np.array(iParams[iModel]['stamp_size'])
+            if(Verbose):
+                print 'enlargement factor is:', enlargementFactor, tempStampSize
 
-        print 'Sum of SB profile:', sb.sum()
 
-        #sb += additionalConstantFlux        
-        gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.0), flux = sb.sum())
-        #sb -= additionalConstantFlux
+            ##Evaluate user-defined function on a fine grid
+            xy = [np.linspace(1, tempStampSize[0], tempStampSize[0]), \
+                np.linspace(1, tempStampSize[1], tempStampSize[1])]
 
-    elif(iParams['modelType'].lower() == 'gaussian'):
+            ##Set the centroid for the image. This instance is a special case, where the centroid is assumed always to be at the centre.
+            #cen = [(np.amax(xy[0])+1)/2., (np.amax(xy[1])+1)/2.]
         
-        ##Set up initially circular image
-        gal = galsim.Gaussian(flux = iParams['flux'], sigma = iParams['size'])
+            cen = iParams[iModel]['centroid'].copy()
 
-        ##Shear this profile to get elliptical profile
-        gal = gal.shear(e1 = iParams['e1'], e2 = iParams['e2'])
-    else:
-        raise RuntimeError('get_Pixelised_Model - Invalid Surface Brightness model passed.')
-
-    ### Output to screen model Parameters if Debug == True
-    if debug:
-        print 'Producing model image using parameters:', iParams.keys(), iParams.values()
-        
-    ##Create pixel response function as tophat of a given entered (known) scale.
-    pix = galsim.Pixel(iParams['pixel_scale'])
-
-    final = galsim.Convolve([gal, pix])
-
-    #Draw image
-    try:
-        image = final.drawImage(nx = iParams['stamp_size'][0], ny = iParams['stamp_size'][1], scale = iParams['pixel_scale'], method = 'no_pixel')
-    except:
-        print 'Error drawing image with GALSIM. Model iParams are:'
-        for kw in iParams.keys():
-            print kw, iParams[kw]
-        raise RuntimeError('Failed to run GALSIM')
+            ## Adjust centroid so it lies in the same relative region of the enlarged Grid, so that returned image can be produced by isolating central part of total image
+            ## This could also be done dy readjusting according to distance from centre.
+            lOffset = 0.5*((enlargementFactor-1)*iParams[iModel]['stamp_size'][0]); rOffset = 0.5*((enlargementFactor-1)*iParams[iModel]['stamp_size'][1])
+            cen[0] = cen[0] + lOffset
+            cen[1] = cen[1] + rOffset
 
 
-    if(noiseType is not None):
-        if Verbose:
-            print 'Adding noise to image: Default',  iParams['noise']
-        noise = galsim.GaussianNoise(rng, sigma = iParams['noise'])
-        ##Add image noise by setting SNR. If preserve_noise = True, then the SNR is acheived by varying noise_var. SNR defined according to `filter-matched' method of GREAT08: SNR = sqrt(sum{I^2_ij}/noise_var)
-        if Verbose:
-            print 'Adding noise by SNR value:', iParams['SNR']
-        iParams['noise'] = image.addNoiseSNR(noise, snr = iParams['SNR'], preserve_flux = True)
-        iParams['noise'] = iParams['noise']**0.5
-        if Verbose:
-            print  'GALSIM Noise:', iParams['noise']
+            ''' Note: No recovery of final subaray is needed provided that xy is evaluated on the same scale as that of size *i.e using no intervals == (enlargmentFactor*stamp_size), as GALSIM only interpolates on this image '''
+
+            sb = sbProfileFunc(xy, cen, iParams[iModel]["SB"]['size'], iParams[iModel]["SB"]['e1'], iParams[iModel]["SB"]['e2'], iParams[iModel]["SB"]['flux'], **sbFuncArgs)
+
+            #Use to debug the form of the surface brightness profile
+            '''
+            import pylab as pl
+            f = pl.figure()
+            ax = f.add_subplot(111)
+            im = ax.imshow(sb, interpolation = 'nearest')
+            pl.colorbar(im)
+            print 'SB flux check:', sb.sum()
+            pl.show()
+            '''
+
+            ## Set up as a GALSIM interpolated image. To do this, one must set the flux normalisation value. How this is done is an open question: setting it to sb.sum assumes that the sb is constructed on a pixel scale, and that the full flux of the image is contained in the postage stamp, or it may mean that the flux only reflects that which is contained in the PS and thus is not rescaled to contain the full model flux. Setting it to iParams[iModel]['flux'] may cause unwanted renormalisation in the image if the PS is too small to contain the entire model.
+            ## Note, use of the Guassian model with no ellipticity agrees with GALSIM in both cases to sub-% *if enlargementFactor is used*. If not, then differences (GALSIM_Default - Interpolated)  can be as large as : -20 per pixel, factor of 3 in PS flux using flux =  sb.sum(), and -10:60 per pixel, factor of 1.01 in PS flux using flux = iParams[iModel]['flux'] (10x10, rs = 6.)
+
+            if(np.absolute(sb.sum()) < 10**(-11)):
+                additionalConstantFlux = 0.#(2.*10.**(-11))/np.prod(sb.shape)
+
+                if(Verbose):
+                    print 'Using additional flux due to machine precision requirements in use of GALSIM'
+
+            print 'Sum of SB profile:', sb.sum()
+
+            #sb += additionalConstantFlux
+            gal = galsim.interpolatedimage.InterpolatedImage(galsim.Image(sb, scale = 1.0), flux = sb.sum())
+            #sb -= additionalConstantFlux
+
+        elif(iParams[iModel]["SB"]['modelType'].lower() == 'gaussian'):
+
+            ##Set up initially circular image
+            gal = galsim.Gaussian(flux = iParams[iModel]["SB"]['flux'], sigma = iParams[iModel]["SB"]['size'])
+
+            ##Shear this profile to get elliptical profile
+            gal = gal.shear(e1 = iParams[iModel]["SB"]['e1'], e2 = iParams[iModel]["SB"]['e2'])
+        elif(iParams[iModel]["SB"]["modelType"].lower() == "disk"):
+            gal = galsim.Sersic(1.5,half_light_radius=iParams[iModel]["SB"]['size'],
+                                flux = iParams[iModel]["SB"]['flux'])
+
+            ##Shear this profile to get elliptical profile
+            gal = gal.shear(e1=iParams[iModel]["SB"]['e1'], e2=iParams[iModel]["SB"]['e2'])
+        else:
+            raise RuntimeError('get_Pixelised_Model - Invalid Surface Brightness model passed.')
+
+        ### Output to screen model Parameters if Debug == True
+        if debug:
+            print 'Producing model image using parameters:', iParams[iModel].keys(), iParams[iModel].values()
+
+        if(iParams[iModel]["PSF"]["PSF_Type"] == 2):
+            lam_over_diam = iParams[iModel]["PSF"]["PSF_Airy_lambda"] / iParams[iModel]["PSF"]["PSF_Airy_diameter"]
+            lam_over_diam *= 206265 #arcsec
+            lam_over_diam *= 10 # Euclid pixels - Note, all this could be done with a Euclid pixel scale
+            obsc = iParams[iModel]["PSF"]["PSF_Airy_obscuration"]
+            psf = galsim.Airy(lam_over_diam = lam_over_diam, obscuration=obsc)
+        else:
+            raise ValueError("GALSIM:PSF_TYPE: Only Airy supported now")
+
+        ##Create pixel response function as tophat of a given entered (known) scale.
+        pix = galsim.Pixel(iParams[iModel]['pixel_scale'])
+
+        final = galsim.Convolve([gal, psf, pix])
+
+        #Draw image
+        try:
+            offset = iParams[iModel]["centroid"] - (iParams[iModel]["stamp_size"]+1)/2.
+            PS.append(final.drawImage(nx = iParams[iModel]['stamp_size'][0], ny = iParams[iModel]['stamp_size'][1],
+                                       scale = iParams[iModel]['pixel_scale'], method = 'no_pixel', offset = offset))
+        except Exception as e:
+            print 'Error drawing image with GALSIM. Model iParams[iModel] are:'
+            for kw in iParams[iModel].keys():
+                print kw, iParams[iModel][kw]
+
+            print 'Failed to run GALSIM'
+            raise RuntimeError(e)
+
+
+        if(noiseType is not None and iModel == 0):
+            raise ValueError("Noise addition has been deprecated for testing purposes")
+            print 'Adding noise to image: Default',  iParams[0]['noise']
+            noise = galsim.GaussianNoise(rng, sigma = iParams[0]['noise'])
+            ##Add image noise by setting SNR. If preserve_noise = True, then the SNR is acheived by varying noise_var. SNR defined according to `filter-matched' method of GREAT08: SNR = sqrt(sum{I^2_ij}/noise_var)
+            if Verbose:
+                print 'Adding noise by SNR value:', iParams[0]['SNR']
+            iParams[0]['noise'] = PS[0].addNoiseSNR(noise, snr = iParams[0]['SNR'], preserve_flux = True)
+            iParams[0]['noise'] = iParams[0]['noise']**0.5
+            if Verbose:
+                print  'GALSIM Noise:', iParams[0]['noise']
         
         #image.addNoise(noise) #also image.addNoiseSNR(noise, snr = )...
 
-    ## additionalConstantFlux is subtracted to remove constant sheet of flux applied for certain machine-precision cases
-    aimage = image.array# - additionalConstantFlux
+        ## additionalConstantFlux is subtracted to remove constant sheet of flux applied for certain machine-precision cases
+        image += PS[iModel].array# - additionalConstantFlux
+
+        ##If debugging, plot pixelised galaxy image
+        ## Edit this to output fits cube
+        if(debug or outputImage):
+            ##Write Image out to file
+            directory = './debugging_output/'
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            PS[iModel].write(os.path.join(directory, 'GALSIM_Image'))
+            print 'Output image to:', os.path.join(directory, 'GALSIM_Image')
+            raw_input('<Enter> to continue')
+
 
     if(sbProfileFunc is not None):
         if(Verbose):
             print 'Model Production: sb sum check:', sb.sum(), aimage.sum()
         #raw_input('Check')
     
-    ##If debugging, plot pixelised galaxy image
-    if(debug or outputImage):
-        ##Write Image out to file
-        directory = './debugging_output/'
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        image.write(os.path.join(directory, 'GALSIM_Image'))
-        print 'Output image to:', os.path.join(directory, 'GALSIM_Image')
-        raw_input('<Enter> to continue')
-            
-    return aimage, iParams
 
+            
+    return image, iParams
+
+
+def magnification_Field(inputDict, fittingParams, mag = None):
+    """
+    This function applies a magnification field to a dictionary
+
+    Requires
+    --------
+
+    inputDict: An unlensed dictionary of one galaxy that wants to be lensed. (Dict)
+    fittingParams: A tuple containing which galaxy properties should be lensed, i.e. ('size',), ('flux',)
+    or ('size','flux',). (Tuple)
+    mag: If None then the magnification field applied is taken from the input dictionary. If specific magnificaiton field
+    wants to be applied set mag = float. (float)
+
+    Returns
+    -------
+
+    galDict: A lensed galaxy dictionary
+    """
+
+    galDict = deepcopy(inputDict)
+    numbImages = len(galDict)
+    mag = np.asscalar(mag)
+
+    ## Selects which part of the dictionary to lens and lenses it 
+
+    if len(fittingParams) ==2: # Lens both size and flux
+        for i in range(numbImages):
+            for j in range(len(galDict['Realization_'+str(i)])):
+                if mag is None:
+                    magnification = galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["magnification"]
+                elif type(mag) == float or type(mag)==np.float64:
+                    magnification = mag
+                else:
+
+                    raise TypeError('\'mag\' must be a float or equal to None, type is ' + str(type(mag)))
+
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"] *= magnification
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"] *= magnification
+                
+
+    elif fittingParams[0] == 'size': # lens only size
+        for i in range(numbImages):
+            for j in range(len(galDict['Realization_'+str(i)])):
+                if mag is None:
+                    magnification = galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["magnification"]
+                elif type(mag) == float or type(mag)==np.float64:
+                    magnification = mag
+                else:
+
+                    raise TypeError('\'mag\' must be a float or equal to None, type is ' + str(type(mag)))
+
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["size"] *= magnification
+                
+
+    elif fittingParams[0] == 'flux': # lens only flux
+        for i in range(numbImages):
+            for j in range(len(galDict['Realization_'+str(i)])):
+                if mag is None:
+                    magnification = galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["magnification"]
+                elif type(mag) == float or type(mag)==np.float64:
+                    magnification = mag
+                else:
+                    raise TypeError('\'mag\' must be a float or equal to None, type is ' + str(type(mag)))
+                galDict['Realization_'+str(i)]['Gal_'+str(j)]['SB']["flux"] *= magnification
+               
+    else: 
+        raise TypeError("The fittingParam variable should be a tuple with either/or /'flux/' or /'size/'")
+
+
+    return galDict
 ##---------------------------- Differentiation Methods --------------------------------------------##
 
 def differentiate_Pixelised_Model_Analytic(modelParams, pVal, pLab, n, permute = False):
     import surface_Brightness_Profiles as SBPro
     from generalManipulation import makeIterableList
     """
-    Wrapper function to produce an analytic derivatve of the pixelised image, by using the fact that the model production routines can be called defining the surface brightness profile routine, and the arguments that are passed into it.
+    Wrapper function to produce an analytic derivatve of the pixelised image, by using the fact that the model production routines can 
+    be called defining the surface brightness profile routine, and the arguments that are passed into it.
 
-    Surface Brightness Profiles: An alterantive SB profile implementation can be provided by using sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, however the Weave implementation uses the output of the Sympy routine in C++ through weave (SciPy), is noticably faster, and has been tested to be exact to the default float precision in python. WEAVE replaced by SWIG compiled CXX version
+    Surface Brightness Profiles: An alterantive SB profile implementation can be provided by using sbProfileFunc = SBPro.gaussian_SBProfile_Sympy, 
+    however the Weave implementation uses the output of the Sympy routine in C++ through weave (SciPy), is noticably faster, and has been tested 
+    to be exact to the default float precision in python. WEAVE replaced by SWIG compiled CXX version
 
     Requires:
     -- modelParams: Disctionary containing default (fixed) values for all parameters which are not being measured
     -- pVal: List ofparamter values, around which the derivative is taken
     -- pLab: List of strings labelling the measured parameters for which the derivative is taken. Must be the same length as pVal
     -- n: Order to which the derivative is taken. SCALAR IN THIS VERSION
-    -- permute: If false, single derivative is output for each order entered. If true, the result is returned in an nParamter^order list covering all permutations of the derivatives, where symmetry is enforced. In this case, the diagonal elements cover the nth derivatve with respect to that parameter. Result is on order of that the parameters are entered. E.g. for parameters a and b entered in that order:
+    -- permute: If false, single derivative is output for each order entered. If true, the result is returned in an nParamter^order list covering 
+    all permutations of the derivatives, where symmetry is enforced. In this case, the diagonal elements cover the nth derivatve with respect to that parameter. 
+    Result is on order of that the parameters are entered. E.g. for parameters a and b entered in that order:
     --- Res = [ ddI/dada, ddI/dadb
                 ddI/dbda, ddI/dbdb ]
 
@@ -792,7 +949,10 @@ def differentiate_Pixelised_Model_Numerical(modelParams, pVal, pLab, n = [1], or
     from derivatives import finite_difference_derivative
     """
     28/5/15
-    Numerically differentiates pixelised model with respect to a given parameter. The model must be produced by a routine which returns a gridded (and/or pixelised) image, and must be accessible using a function of form f(x, *args), where x sets the value of the parameter being differentiated wrt, and args allows this value to be correctly labelled in the input model parameter dictionary. These functions are hard coded in this original version, but may be generalised to a user defined  function in future versions.
+    Numerically differentiates pixelised model with respect to a given parameter. The model must be produced by a routine which returns a gridded 
+    (and/or pixelised) image, and must be accessible using a function of form f(x, *args), where x sets the value of the parameter being differentiated wrt, 
+    and args allows this value to be correctly labelled in the input model parameter dictionary. These functions are hard coded in this original version, 
+    but may be generalised to a user defined  function in future versions.
 
     This is useful for the numerical evaluation of ML bias.
 
@@ -818,7 +978,8 @@ def gaussian_SBProfile(xy, cen, sigma, e1, e2, Itot):
     from math import pi
     """
     DEPRECATED in favor if SymPy or Weave (C++) defintions. Kept as easier to understand form of profile in comparison to those.
-    Returns elliptical Gaussian surface brightness profile on a user-specified 2D Grid (xy), which is a 2-element tuple, with each element a 1D <ndarray>, in order [x,y]
+    Returns elliptical Gaussian surface brightness profile on a user-specified 2D Grid (xy), which is a 2-element tuple, with each element a 1D <ndarray>, 
+    in order [x,y]
 
     Requires:
     xy:  2-element tuple which defines grid, with each element a 1D <ndarray>, in order [x,y]

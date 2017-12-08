@@ -109,7 +109,8 @@ def bias_bySNR_analytic():
         ##Set Model
         imageParams['SNR'] = SNR
 
-        ##Produce image to update noise to correct value (THIS IS A HACK AND NEEDS CHANGED) - estimate_Noise works fairly well, but you need to specify the noise correctly
+        ##Produce image to update noise to correct value (THIS IS A HACK AND NEEDS CHANGED) - estimate_Noise works fairly well, but you need to specify 
+        #the noise correctly
         #disc, imageParams = modPro.get_Pixelised_Model(imageParams, noiseType = 'G', outputImage = False)
 
         ## Check image to get SNR
@@ -133,7 +134,8 @@ def bias_bySNR():
     '''
     Run multiple realisations and produces SB profile estimates for each run. Set up for measurment of e1, should be generalised.
     To Do:
-    --Generalise to multiple parameters: fitParams and setting defaults for thes fitParams, so that routine does not have any information on these parameters
+    --Generalise to multiple parameters: fitParams and setting defaults for thes fitParams, so that routine does not have any information
+      on these parameters
     --Mean output: Header information - fitParams and input value
     '''
     print 'Producing Bias by SNR ratio'

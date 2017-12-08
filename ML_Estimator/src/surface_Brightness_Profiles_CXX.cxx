@@ -2,7 +2,7 @@
 #include <cmath>
 
 //Internal defintion of size_t
-typedef unsigned int size_t;
+//typedef unsigned int size_t;
 
 //---------- GAUSSIAN Surface Brightness Profiles (Flattened). In all of the below, the arguments list goes as:
 // flux (scalar)

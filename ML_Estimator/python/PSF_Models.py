@@ -9,7 +9,8 @@ def PSFModel_CXX(xy, cen, Param, der = []):
     """
     Routine that produces the PSF profile and its derivatives using C++ code called through Weave inline.
     
-    Note: As the code is compiled for the first run and then run from precompiled code, it may be the case that the code will be quickest when compiled in seperate routines
+    Note: As the code is compiled for the first run and then run from precompiled code, it may be the case that the code 
+    will be quickest when compiled in seperate routines
     -- Uses the surface_brightness_Profile definitions of Gaussian profiles to evaluate the Guassian PSF model
 
     Requires:
