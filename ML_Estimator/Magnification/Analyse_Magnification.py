@@ -5,17 +5,36 @@ sys.path.insert(0, os.path.abspath("../"))
 import mypylib.utils.io as io
 import numpy as np
 import copy
+import os
+import collections
 
 import python.model_Production as modPro
 import BuildData
 
 saveAll = True
 
+directory = "./storage/"
+
 noiseDict = {"sky":114.,
              "readnoise":5.4,
              "gain":3.5}
 
 fluxBoost = 1.e0
+nGalaxy = 100
+
+# Fisher, fitGauss
+_errorType = "fitGauss"
+
+# brent, powell, fmin, brent, golden, all (includes timing)
+_optMethod = "brent"
+
+# used to set brent bracketing, and guassian error fit guess
+_postWidthGuess = 0.1
+
+def log_gaussian_fn(x, mean, sigma, amp):
+    result = -1.*0.5*np.power(x-mean, 2)/(np.power(sigma,2)) + amp
+    print "Considering: ", mean, sigma, amp , " with result:", result
+    return result
 
 def combine_Images(data,catalogue, save = True):
     """
@@ -32,8 +51,8 @@ def combine_Images(data,catalogue, save = True):
 
     print "Total images:", totalImages
 
-    combinedImages = {}
-    combinedCatalogue = {}
+    combinedImages = collections.OrderedDict()
+    combinedCatalogue = collections.OrderedDict()
     counter = -1
 
     while nImagesUsed < totalImages-1:
@@ -66,11 +85,11 @@ def combine_Images(data,catalogue, save = True):
     combinedCatalogue['nImage'] = counter
 
     if save:
-        filename = "./Combined_Data.h5"
+        filename = os.path.join(directory,"Combined_Data.h5")
         io.save_dict_to_hdf5(filename, combinedImages)
         print ".. Output combined images to %s"%(filename)
 
-        filename = "./Combined_Catalogue.h5"
+        filename = os.path.join(directory,"Combined_Catalogue.h5")
         io.save_dict_to_hdf5(filename, combinedCatalogue)
         print ".. Output combined catalogue to %s" % (filename)
 
@@ -104,7 +123,26 @@ def construct_Blended_Model(catalogue):
 
     return model
 
-def logLikelihood(mu, images, icovs, catalogue, signMod = +1):
+class iteratorStore(object):
+    """
+    Class used to allow extraction of iteration information from function, e.g. log-likelihood in optimisation
+    """
+    def __init__(self):
+        self.iteration = []
+        self.func = []
+
+    def add(self,x,y):
+        self.iteration.append(x)
+        self.func.append(y)
+
+    def PRINT(self):
+        print "iteration:", self.iteration
+        print "function:", self.func
+
+    def get(self):
+        return np.array(self.iteration), np.array(self.func)
+
+def logLikelihood(mu, images, icovs, catalogue, signMod = +1, normalisation = 0., itStore = None, asReduced = False):
     """
 
     :param mu:
@@ -112,6 +150,7 @@ def logLikelihood(mu, images, icovs, catalogue, signMod = +1):
     :param icovs:
     :param catalogue:
     :param signMod: If +1, this is a cost. If -1, this is log-likelihood
+    :param asReduced: If true, then return reducedChi2 (useful for fitting)
     :return:
     """
 
@@ -128,7 +167,7 @@ def logLikelihood(mu, images, icovs, catalogue, signMod = +1):
     # For each source, construct the model and then use to get log-likelihood
     lnL = 0
     for i in range(lensed['nImage']):
-        model = None
+        model = np.zeros_like(images[str(i)])
         for g in range(lensed[str(i)]['nGal']):
             galaxy = lensed[str(i)][str(g)]
             singleModel, disc = modPro.get_Pixelised_Model(galaxy, noiseType=None, Verbose=False,
@@ -141,11 +180,21 @@ def logLikelihood(mu, images, icovs, catalogue, signMod = +1):
         # Get lnL contribution
         lnL += (np.power(images[str(i)] - model,2)*icovs[i]).sum()
 
-    print "lnL was: ", lnL
+    reduced = lnL/(np.prod(model.shape)*lensed['nImage'])
+    print "\n lnL was: ", lnL #Chi^2 here
     print "Expected is roughly: ", np.prod(model.shape)*lensed['nImage']
     print "Reduced is therefore: ", lnL/(np.prod(model.shape)*lensed['nImage'])
+    lnL -= normalisation
+    print "Normalised: ", lnL
 
-    return sign*lnL
+    if itStore is not None:
+        itStore.add(mu, -1.*lnL)
+
+    if asReduced:
+        assert normalisation == 0., "logLikelihood: asReduced only valid without normalisation"
+        return reduced
+    else:
+        return sign*lnL
 
 def boostFlux(catalogue, images):
 
@@ -159,8 +208,6 @@ def boostFlux(catalogue, images):
 
 if __name__ == "__main__":
 
-
-
     if len(sys.argv) != 2:
         raise RuntimeError("Please enter magnification factor as first argument")
 
@@ -168,13 +215,15 @@ if __name__ == "__main__":
 
     print "Running magnification factor: ", magnification
 
-    BuildData.buildData(nGalaxy=100, magnification=magnification)
+    # --------------------------------------- Generate Data ---------------------------------------------------------- #
+
+    BuildData.buildData(nGalaxy=nGalaxy, magnification=magnification, directory=directory)
 
     strMu = str(magnification)
 
     # Denote the input catalogues
-    inputDataFile = "./GEMS_sampled_data_lensed_"+strMu+".h5"
-    inputCatalogueFile = "./GEMS_sampled_catalogue_unlensed_"+strMu+".h5"
+    inputDataFile = os.path.join(directory,"GEMS_sampled_data_lensed_"+strMu+".h5")
+    inputCatalogueFile = os.path.join(directory,"GEMS_sampled_catalogue_unlensed_"+strMu+".h5")
 
     # Read in the data
     data = io.load_dict_from_hdf5(inputDataFile)
@@ -184,13 +233,18 @@ if __name__ == "__main__":
 
     print "Loaded ", catalogue['nGal'], " galaxy images"
 
-    # Boost the flux for magnification measurement - this must boost unlensed flux value
+    # Boost the flux for magnification measurement
     if fluxBoost > 1.:
         catalogue, data = boostFlux(copy.deepcopy(catalogue),
                                     copy.deepcopy(data))
 
-    # Combine data into identical images, based on Poisson Distribution
+    # -------------------- Combine data into identical images, based on Poisson Distribution ------------------------- #
     blendedImages, blendedCatalogue = combine_Images(data, catalogue, saveAll)
+    print ".. Produced ", len(blendedImages), " blended images"
+
+    # ----------------------------------  Add Noise to the images ---------------------------------------------------- #
+
+    ## -------- For blended images -------
 
     # Get icovs, which is inverse covariance of the observed source
     import python.noiseDistributions as noiseMod
@@ -199,30 +253,160 @@ if __name__ == "__main__":
     for key, image in blendedImages.iteritems():
         icovs.append( 1./noiseMod.estimate_PN_noise(copy.deepcopy(image), **noiseDict) )
 
-    # Add Noise to the images
-    noisyBlendedImages = {}
+    noisyBlendedImages = collections.OrderedDict()
     for key, val in blendedImages.iteritems():
         noisyBlendedImages[key] = noiseMod.add_PN_Noise(copy.deepcopy(val), **noiseDict)
-    print "Produced ", len(noisyBlendedImages.keys()), " noisy blended images"
+    print ".. Produced ", len(noisyBlendedImages.keys()), " noisy blended images"
+
+    noiseCheck = collections.OrderedDict()
+    for key, val in noisyBlendedImages.iteritems():
+        noiseCheck[key] = val - blendedImages[key]
+
+    io.output_images_to_MEF(os.path.join(directory,"Noisy_Blended_Images_CHECK_"+strMu+".fits"), noiseCheck.values())
 
     if saveAll:
-        filename = "./Noisy_Blended_Images_"+strMu+".h5"
-        io.save_dict_to_hdf5(filename, noisyBlendedImages)
+        filename = os.path.join(directory,"Noisy_Blended_Images_"+strMu+".fits")
+        io.output_images_to_MEF(filename, noisyBlendedImages.values())
+        #io.save_dict_to_hdf5(filename, noisyBlendedImages)
         print ".. Output noisy blended images to %s" % (filename)
 
-    # Measure the magnification
+    ## ------- For unblended images --------
+
+    # Get icovs, which is inverse covariance of the observed source
+    import python.noiseDistributions as noiseMod
+    import copy
+    indIcovs = []
+    for key, image in data.iteritems():
+        indIcovs.append( 1./noiseMod.estimate_PN_noise(copy.deepcopy(image), **noiseDict) )
+
+    noisyIndImages = collections.OrderedDict()
+    for key, val in data.iteritems():
+        noisyIndImages[key] = noiseMod.add_PN_Noise(copy.deepcopy(val), **noiseDict)
+    print ".. Produced ", len(noisyIndImages.keys()), " noisy individual images"
+
+    if saveAll:
+        filename = os.path.join(directory,"Noisy_Individual_Images_"+strMu+".fits")
+        io.output_images_to_MEF(filename, noisyIndImages.values())
+        #io.save_dict_to_hdf5(filename, noisyBlendedImages)
+        print ".. Output noisy individual images to %s" % (filename)
+
+    # --------------------------------------- Deblend ---------------------------------------------------------------- #
+
+
+    # ------------------------------- Measure the magnification ------------------------------------------------------ #
+    iterStore = iteratorStore()
     print "Measuring magnification: "
     import scipy.optimize as opt
-    args = (noisyBlendedImages, icovs, blendedCatalogue, +1)
+
+    kwargs = collections.OrderedDict()
+    kwargs["images"] = noisyBlendedImages
+    kwargs["icovs"] = icovs
+    kwargs["catalogue"] = blendedCatalogue
+    kwargs["signMod"] = +1
+    kwargs["normalisation"] = 0.
+    kwargs["itStore"] = iterStore
+    kwargs["asReduced"] = True
+    args = tuple(kwargs.values())
 
     # Testing: Check lnLikelihood at truth, and at value different to truth
     print "lnL at truth: ", logLikelihood(magnification, *args)
     print "lnL at 2x truth: ", logLikelihood(2.*magnification, *args)
 
+    import time
     print "Fitting..."
-    #fitMu = opt.fmin(logLikelihood, x0 = magnification, xtol = 1.e-6, args = args)
+    fitMu = None
+    if _optMethod.lower() == "fmin" or _optMethod.lower() == "all":
+        tf1 = time.time()
+        fitargs = opt.fmin(logLikelihood, x0 = magnification, xtol = 1.e-6, args = args)
+        tf2 = time.time()
+        fitMu = fitargs
+        print "Finished fmin"
+    if _optMethod.lower() == "powell" or _optMethod.lower() == "all":
+        tp1 = time.time()
+        fitargs = opt.fmin_powell(logLikelihood, x0=magnification, xtol=1.e-6, args=args)
+        tp2 = time.time()
+        print "Finished powell"
+    #tb1 = time.time()
+    #fitargs = opt.fmin_bfgs(logLikelihood, x0=magnification, args=args)
+    #tb2 = time.time()
+    #print "Finished bfgs"
+    if _optMethod.lower() == "brent" or _optMethod.lower() == "all":
+        tbr1 = time.time()
+        fitargs = opt.brent(logLikelihood, args=args, tol = 1.e-6,
+                                 brack = [magnification-_postWidthGuess, magnification, magnification+_postWidthGuess])
+        tbr2 = time.time()
+        fitMu = fitargs
+        print "Finished brent"
+    if _optMethod.lower() == "golden" or _optMethod.lower() == "all":
+        tg1 = time.time()
+        fitargs = opt.golden(logLikelihood, args=args, tol = 1.e-6,
+                                 brack = [magnification-_postWidthGuess, magnification, magnification+_postWidthGuess])
+        tg2 = time.time()
+        fitMu = fitargs
+        print "Finished golden"
 
-    x = np.linspace(1.19, 1.21, 100)
+    if fitMu is None:
+        raise ValueError("optMethod (%s) not recognised"%(_optMethod))
+    print "... Got Fit", fitMu
+
+    if _optMethod.lower() == "all":
+        print "Time Check:"
+        print "fmin:", tf2-tf1
+        print "powell:", tp2-tp1
+        #print "bfgs:", tb2-tb1
+        print "brent:", tbr2-tbr1
+        print "golden:", tg2 - tg1
+        raw_input("Check")
+
+    print "Iteration info"
+    print iterStore.get()
+    #raw_input("Check")
+
+
+    # Edit normalisation to reflect the fact the we now know the ML point
+    kwargs["normalisation"] = fitMu
+    args = tuple(kwargs.values())
+    # Append this onto lnLikelihood arguements to minimise numerical error in the following
+    #listargs = list(args); listargs.append(fitMu[0]); args = tuple(listargs)
+
+    # Get Fisher Estimate of uncertainty
+    if _errorType.lower() == "fisher":
+        print "Getting FM...", fitMu
+        from mypylib.stats.distributions import fisher_matrix
+        # This doesn't look for convergence, which might be a problem where the uncertainty is not known
+        FM = -1.*fisher_matrix(logLikelihood, fitMu, args, h = 1.e-5)
+        print "...Got FM", FM
+        if np.prod(FM.shape) == 1:
+            FError = np.sqrt(1./FM[0,0])
+        else:
+            FError = np.sqrt(np.diag(np.linalg.inv(FM)))
+            print "FM shape: ", FM.shape
+            raise RuntimeError("No multi-param FM implemented yet")
+        print "... FM estimated error is: ", FError
+        errorEst = FError
+    elif _errorType.lower() == "fitgauss":
+        x, y = iterStore.get()
+        y = np.array(y) # Convert from cost to log-likelihood
+
+        # Renormalise to allow sensible bound on amplitude to be easily set
+        y -= np.max(y)
+
+        p0 = [fitMu, _postWidthGuess/100., 0.]
+        bounds = [[fitMu-0.1, 1.e-14, -0.1],[fitMu+0.1,1.,0.1]]
+
+        popt, pcurv = opt.curve_fit(log_gaussian_fn, x, y, p0=p0, bounds=bounds)
+        print "Guassian fit with: ", popt
+        #print "FIT CHECK:", log_gaussian_fn(x, *popt)
+        #raw_input("Check")
+        errorEst = popt[1]
+    else:
+        raise ValueError("No Error Estimate taken")
+
+    kwargs["asReduced"] = False
+    args = tuple(kwargs.values())
+
+    # -- Plot it using a brute force resampling -- this is really testing only
+    x = np.linspace(fitMu[0]-3.*errorEst, fitMu[0]+3.*errorEst, 100)
     lnL = np.empty_like(x)
     for i,xv in enumerate(x):
         lnL[i] = -1.*logLikelihood(xv, *args)
@@ -230,6 +414,7 @@ if __name__ == "__main__":
     import pylab as pl
     ax = pl.subplot()
     ax.plot(x, np.exp(lnL-np.max(lnL)))
+    ax.errorbar(fitMu, [0.5], xerr = errorEst, marker = "x")
     pl.show()
 
 

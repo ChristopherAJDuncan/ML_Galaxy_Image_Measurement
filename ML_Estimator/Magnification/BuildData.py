@@ -19,6 +19,7 @@ import numpy as np
 import random
 import csv
 import math
+import os
 import scipy.optimize as opt
 import multiprocessing as mp
 from scipy.stats import norm
@@ -270,9 +271,10 @@ def magnify_Catalogue(mu, catalogue):
 
     return catalogue
 
-def buildData(nGalaxy = 10000, magnification = 1.):
+def buildData(nGalaxy = 10000, magnification = 1., directory = ""):
     ### Defines the common variables to all cores ###
     import mypylib.utils.io as io
+    from collections import OrderedDict
 
     ngalim = np.prod(stamp_size * euclidPixelSize / 60.) * ngal
     print "Average number per image is :", ngalim
@@ -292,15 +294,15 @@ def buildData(nGalaxy = 10000, magnification = 1.):
             Gems_data.remove(x)
 
     catalogue = {"ngalim":ngalim}
-    data = {}
-    lensed = {}
-    iterOutput = 100
+    data = OrderedDict()
+    lensed = OrderedDict()
+    iterOutput = 100000
 
     strMu = str(magnification)
 
-    catFilename = "./GEMS_sampled_catalogue_unlensed_"+strMu+".h5"
-    lensedFilename = "./GEMS_sampled_catalogue_lensed_" + strMu + ".h5"
-    dataFilename = "./GEMS_sampled_data_lensed_" + strMu + ".h5"
+    catFilename = os.path.join(directory,"GEMS_sampled_catalogue_unlensed_"+strMu+".h5")
+    lensedFilename = os.path.join(directory,"GEMS_sampled_catalogue_lensed_" + strMu + ".h5")
+    dataFilename = os.path.join(directory,"GEMS_sampled_data_lensed_" + strMu + ".h5")
 
     for i in range(Numb_real):
         catalogue[str(i)] = getRandData(Gems_data)
@@ -310,20 +312,58 @@ def buildData(nGalaxy = 10000, magnification = 1.):
                                                         outputImage=False, sbProfileFunc=None)
 
         ## Output as a function of iteration
-        if i%iterOutput == 0 or i == Numb_real-1:
+        if i == Numb_real-1 or i%iterOutput == 0:
             catalogue["nGal"] = i
             io.save_dict_to_hdf5(catFilename, catalogue)
-            data["nGal"] = i
-            io.save_dict_to_hdf5(dataFilename, data)
+
+            #data["nGal"] = i #This screws up MEF output, required for h5 readin of data (could use catalogue info)
+            io.save_dict_to_hdf5(dataFilename, copy.deepcopy(data))
+
+
+
             lensed["nGal"] = i
             io.save_dict_to_hdf5(lensedFilename, lensed)
 
+
+    # Final output of MEF data version: not sure why this doesn't work with interim: could it be pointer
+    # issues with data dictionary?
+    dataFilename = os.path.splitext(dataFilename)[0] + ".fits"
+    print "Calling MEF2", dataFilename
+    io.output_images_to_MEF(dataFilename
+                             , data.values())
+    print "Called MEF2"
 
     print "Finished Building Data. Output files to: "
     print catFilename
     print dataFilename
     print lensedFilename
     print " "
+    #raw_input("Check")
+
+def CFHTLens_SizeMagnitude_Alsing2014(mag, lnsize):
+    """
+    Returns the Alsing 2014 fit to the CFHTLenS data, without a selection function.
+    :param mag:
+    :param lnsize:
+    :return:
+    """
+
+    from mypylib.stats.distributions import normal_distribution, schecter_distribution
+
+    # Parameterisation.
+    a1 = -0.368
+    a2 = 6.96
+    b1 = 0.0513
+    b2 = -0.8
+    alpha = -1.174
+    mstar = 22.511
+
+    # Construct the mag-dependent lnSize mean and variance
+    mLam = a1*mag + a2
+    sigLam = b1*mag + b2
+
+    return (normal_distribution(lnsize, mean = mLam, sigma = sigLam)*
+            schecter_distribution(mag, xstar = mstar, alpha = alpha))
 
 
 """
