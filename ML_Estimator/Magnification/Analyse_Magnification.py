@@ -1,3 +1,6 @@
+#!/Users/Ocelot/anaconda/bin/python
+
+
 import os
 import sys
 sys.path.insert(0, os.path.abspath("../"))
@@ -12,15 +15,20 @@ import python.model_Production as modPro
 import BuildData
 
 saveAll = True
+# If true, take a brute force evaluation of the posterior and compare to estimate found
+mlComparisonPlot = False
 
 directory = "./storage/"
 
 noiseDict = {"sky":114.,
              "readnoise":5.4,
              "gain":3.5}
+fluxBoost = 10.e0
+nGalaxy = 200
 
-fluxBoost = 1.e0
-nGalaxy = 100
+# Degrees of freedom is determined later
+rankDOF = None
+DOF = None
 
 # Fisher, fitGauss
 _errorType = "fitGauss"
@@ -28,12 +36,22 @@ _errorType = "fitGauss"
 # brent, powell, fmin, brent, golden, all (includes timing)
 _optMethod = "brent"
 
-# used to set brent bracketing, and guassian error fit guess
-_postWidthGuess = 0.1
+# used to set brent bracketing, and gaussian error fit guess
+_postWidthGuess = 0.01
 
-def log_gaussian_fn(x, mean, sigma, amp):
-    result = -1.*0.5*np.power(x-mean, 2)/(np.power(sigma,2)) + amp
-    print "Considering: ", mean, sigma, amp , " with result:", result
+_nThreads = 1 # Not used
+_allowMPI = True
+_mpiKeepIterating = True
+_mpiUpdatedParameters = True
+mycomm = None
+myrank = None
+mycommsize = None
+if _allowMPI:
+    from mpi4py import MPI
+
+def log_gaussian_fn(x, mean, sigma):
+    result = -1.*0.5*np.power(x-mean, 2)/(np.power(sigma,2)) #+ amp
+    print "Considering: ", mean, sigma, " with result:", result
     return result
 
 def combine_Images(data,catalogue, save = True):
@@ -142,7 +160,73 @@ class iteratorStore(object):
     def get(self):
         return np.array(self.iteration), np.array(self.func)
 
-def logLikelihood(mu, images, icovs, catalogue, signMod = +1, normalisation = 0., itStore = None, asReduced = False):
+
+
+def logLikelihood_MPI(mu, images, icovs, catalogue, signMod = +1, normalisation = 0., itStore = None,
+                      asReduced = False):
+
+    #if myrank == 0:
+    #    global _mpiKeepIterating
+    #    _mpiKeepIterating = False
+
+    print " "
+
+    if not _allowMPI:
+        return logLikelihood(mu, images, icovs, catalogue, signMod,normalisation,itStore,asReduced)
+
+    lnL = np.zeros(1)
+    summedLnL = np.zeros(1)
+
+    global _mpiKeepIterating, _mpiUpdatedParameters
+    if myrank == 0:
+        # Make sure to reset these for leader rank
+        _mpiKeepIterating = True
+        _mpiUpdatedParameters = True
+
+    # Update parameters
+    while _mpiKeepIterating:
+
+        _mpiKeepIterating = mycomm.bcast(True, root = 0)
+        if not _mpiKeepIterating:
+            break
+
+        # Broadcast and receive parameters
+        _mpiUpdatedParameters = mycomm.bcast(_mpiUpdatedParameters, root = 0)
+        #print "Rank ", myrank, "has updated parameters? ", _mpiUpdatedParameters
+
+        if _mpiUpdatedParameters:
+
+            mu = mycomm.bcast(mu, root = 0)
+            print "Rank", myrank, " has parameter value: ", mu
+
+            # Reconstruct the log-likelihood
+            lnL[0] = logLikelihood(mu, images, icovs, catalogue, signMod, normalisation=0, itStore = None, asReduced=False)
+
+            #print "Rank ", myrank, " got lnL contribution of:", lnL, " for mag:", mu, " with reduced:", lnL/rankDOF
+
+            if myrank == 0:
+                _mpiKeepIterating = False
+
+            mycomm.Reduce(lnL, summedLnL, root=0)
+
+            _mpiUpdatedParameters = False
+
+    summedLnL = summedLnL[0]
+
+    if itStore is not None:
+        itStore.add(mu, -1.*signMod*summedLnL)
+
+    if asReduced:
+        assert DOF is not None, "logLikelihood_MPI: Reduced requested but DOF not supplied"
+        summedLnL /= DOF
+
+    return summedLnL
+
+
+
+
+def logLikelihood(mu, images, icovs, catalogue, signMod = +1, normalisation = 0., itStore = None, asReduced = False,
+                  imageBound = None):
     """
 
     :param mu:
@@ -162,11 +246,14 @@ def logLikelihood(mu, images, icovs, catalogue, signMod = +1, normalisation = 0.
 
     lensed = apply_magnification(mu, copy.deepcopy(catalogue))
 
+    if imageBound is None:
+        imageBound = [0,lensed['nImage']]
+
     sign = signMod/abs(signMod)
 
     # For each source, construct the model and then use to get log-likelihood
     lnL = 0
-    for i in range(lensed['nImage']):
+    for i in range(imageBound[0], imageBound[1],1):
         model = np.zeros_like(images[str(i)])
         for g in range(lensed[str(i)]['nGal']):
             galaxy = lensed[str(i)][str(g)]
@@ -180,18 +267,21 @@ def logLikelihood(mu, images, icovs, catalogue, signMod = +1, normalisation = 0.
         # Get lnL contribution
         lnL += (np.power(images[str(i)] - model,2)*icovs[i]).sum()
 
-    reduced = lnL/(np.prod(model.shape)*lensed['nImage'])
-    print "\n lnL was: ", lnL #Chi^2 here
-    print "Expected is roughly: ", np.prod(model.shape)*lensed['nImage']
-    print "Reduced is therefore: ", lnL/(np.prod(model.shape)*lensed['nImage'])
+    #print "\n lnL was: ", lnL #Chi^2 here
+    #print "Expected is roughly: ", np.prod(model.shape)*lensed['nImage']
+    #print "Reduced is therefore: ", lnL/(np.prod(model.shape)*lensed['nImage'])
     lnL -= normalisation
-    print "Normalised: ", lnL
+    #print "Normalised: ", lnL
 
     if itStore is not None:
         itStore.add(mu, -1.*lnL)
 
     if asReduced:
         assert normalisation == 0., "logLikelihood: asReduced only valid without normalisation"
+        if DOF is not None:
+            reduced = lnL/DOF
+        else:
+            reduced = lnL / (np.prod(model.shape) * lensed['nImage'])
         return reduced
     else:
         return sign*lnL
@@ -208,10 +298,32 @@ def boostFlux(catalogue, images):
 
 if __name__ == "__main__":
 
+    lnLFunc = logLikelihood_MPI
+
     if len(sys.argv) != 2:
         raise RuntimeError("Please enter magnification factor as first argument")
 
     magnification = float(sys.argv[1])
+
+    # Alter directory to reflect input
+    directory = os.path.join(directory, "mu_"+str(magnification))
+
+    #global mycomm, myrank, mycommsize
+    if _allowMPI:
+        mycomm = MPI.COMM_WORLD
+        myrank = mycomm.Get_rank()
+        mycommsize = mycomm.Get_size()
+        # If using MPI, then process all the data separately
+        directory = os.path.join(directory, "MPIRank"+str(myrank))
+
+        # Ensure total nGalaxy over *all* threads
+        nGalaxy = nGalaxy//mycommsize + 1
+        print "Rank ", myrank, " is considering ", nGalaxy, " galaxies"
+
+    else:
+        myrank = 0
+
+    io.mkdirs(directory)
 
     print "Running magnification factor: ", magnification
 
@@ -294,6 +406,8 @@ if __name__ == "__main__":
 
 
     # ------------------------------- Measure the magnification ------------------------------------------------------ #
+    if _allowMPI: mycomm.Barrier()
+
     iterStore = iteratorStore()
     print "Measuring magnification: "
     import scipy.optimize as opt
@@ -304,26 +418,61 @@ if __name__ == "__main__":
     kwargs["catalogue"] = blendedCatalogue
     kwargs["signMod"] = +1
     kwargs["normalisation"] = 0.
-    kwargs["itStore"] = iterStore
-    kwargs["asReduced"] = True
+    if myrank == 0:
+        kwargs["itStore"] = iterStore
+        kwargs["asReduced"] = True
+    else:
+        kwargs["itStore"] = None
+        kwargs["asReduced"] = False
     args = tuple(kwargs.values())
 
+
+    ## Determine the degrees of freedom
+    rankDOF = len(blendedCatalogue)*np.prod(noisyBlendedImages["0"].shape)*np.ones(1)
+    if _allowMPI:
+        DOF = np.zeros(1)
+        mycomm.Reduce(rankDOF, DOF, root = 0)
+        DOF = DOF[0]
+    else:
+        DOF = rankDOF[0]
+
+    print 'nData:', rankDOF, " for rank:", myrank, " with nimage:", len(blendedCatalogue)
+
+    if myrank == 0:
+        print "Degrees of freedom is: ", DOF
+
+    # Start looping lnL update for non-leader rank. For all non-leader ranks, this first call sets up a loop
+    # which is used to keep updating the log-likelihood for the parameter value set by the leader.
+    # NOTE: This might complicate the interpretation when non-global parameters are fit, e.g. centroiding etc
+
     # Testing: Check lnLikelihood at truth, and at value different to truth
-    print "lnL at truth: ", logLikelihood(magnification, *args)
-    print "lnL at 2x truth: ", logLikelihood(2.*magnification, *args)
+    # Note, these will be different for n > 1, as other threads contribute to lnL in above
+    #print "check lnL:", logLikelihood(magnification, *args)
+    print "lnL at truth: ", lnLFunc(magnification, *args)
+
+    # Everything after this should be rank 0 only
+    if myrank != 0:
+        print "Exiting rank:", myrank
+        exit()
+
+    print "lnL at 2x truth: ", lnLFunc(2.*magnification, *args)
+    # Note, these will be different for n > 1, as other threads contribute to lnL in above
+    #print "check lnL:", logLikelihood(2.*magnification, *args)
+
+
 
     import time
     print "Fitting..."
     fitMu = None
     if _optMethod.lower() == "fmin" or _optMethod.lower() == "all":
         tf1 = time.time()
-        fitargs = opt.fmin(logLikelihood, x0 = magnification, xtol = 1.e-6, args = args)
+        fitargs = opt.fmin(lnLFunc, x0 = magnification, xtol = 1.e-6, args = args)
         tf2 = time.time()
         fitMu = fitargs
         print "Finished fmin"
     if _optMethod.lower() == "powell" or _optMethod.lower() == "all":
         tp1 = time.time()
-        fitargs = opt.fmin_powell(logLikelihood, x0=magnification, xtol=1.e-6, args=args)
+        fitargs = opt.fmin_powell(lnLFunc, x0=magnification, xtol=1.e-6, args=args)
         tp2 = time.time()
         print "Finished powell"
     #tb1 = time.time()
@@ -332,14 +481,16 @@ if __name__ == "__main__":
     #print "Finished bfgs"
     if _optMethod.lower() == "brent" or _optMethod.lower() == "all":
         tbr1 = time.time()
-        fitargs = opt.brent(logLikelihood, args=args, tol = 1.e-6,
-                                 brack = [magnification-_postWidthGuess, magnification, magnification+_postWidthGuess])
+        fitargs = opt.brent(lnLFunc, args=args, tol = 1.e-6,
+                                 brack = [magnification-5.*_postWidthGuess,
+                                          magnification,
+                                          magnification+5.*_postWidthGuess])
         tbr2 = time.time()
         fitMu = fitargs
         print "Finished brent"
     if _optMethod.lower() == "golden" or _optMethod.lower() == "all":
         tg1 = time.time()
-        fitargs = opt.golden(logLikelihood, args=args, tol = 1.e-6,
+        fitargs = opt.golden(lnLFunc, args=args, tol = 1.e-6,
                                  brack = [magnification-_postWidthGuess, magnification, magnification+_postWidthGuess])
         tg2 = time.time()
         fitMu = fitargs
@@ -374,7 +525,7 @@ if __name__ == "__main__":
         print "Getting FM...", fitMu
         from mypylib.stats.distributions import fisher_matrix
         # This doesn't look for convergence, which might be a problem where the uncertainty is not known
-        FM = -1.*fisher_matrix(logLikelihood, fitMu, args, h = 1.e-5)
+        FM = -1.*fisher_matrix(lnLFunc, fitMu, args, h = 1.e-5)
         print "...Got FM", FM
         if np.prod(FM.shape) == 1:
             FError = np.sqrt(1./FM[0,0])
@@ -391,8 +542,10 @@ if __name__ == "__main__":
         # Renormalise to allow sensible bound on amplitude to be easily set
         y -= np.max(y)
 
-        p0 = [fitMu, _postWidthGuess/100., 0.]
-        bounds = [[fitMu-0.1, 1.e-14, -0.1],[fitMu+0.1,1.,0.1]]
+        print "Fitting to", y
+
+        p0 = [fitMu, _postWidthGuess]
+        bounds = [[fitMu-_postWidthGuess/1000., 1.e-14],[fitMu+_postWidthGuess/1000.,1.]]
 
         popt, pcurv = opt.curve_fit(log_gaussian_fn, x, y, p0=p0, bounds=bounds)
         print "Guassian fit with: ", popt
@@ -405,19 +558,23 @@ if __name__ == "__main__":
     kwargs["asReduced"] = False
     args = tuple(kwargs.values())
 
-    # -- Plot it using a brute force resampling -- this is really testing only
-    x = np.linspace(fitMu[0]-3.*errorEst, fitMu[0]+3.*errorEst, 100)
-    lnL = np.empty_like(x)
-    for i,xv in enumerate(x):
-        lnL[i] = -1.*logLikelihood(xv, *args)
+    if mlComparisonPlot:
+        # -- Plot it using a brute force resampling -- this is really testing only
+        x = np.linspace(fitMu-3.*errorEst, fitMu+3.*errorEst, 100)
+        lnL = np.empty_like(x)
+        for i,xv in enumerate(x):
+            lnL[i] = -1.*lnLFunc(xv, *args)
 
-    import pylab as pl
-    ax = pl.subplot()
-    ax.plot(x, np.exp(lnL-np.max(lnL)))
-    ax.errorbar(fitMu, [0.5], xerr = errorEst, marker = "x")
-    pl.show()
+        import pylab as pl
+        ax = pl.subplot()
+        ax.plot(x, np.exp(lnL-np.max(lnL)))
+        ax.errorbar(fitMu, [0.5], xerr = errorEst, marker = "x")
+        pl.show()
 
-
+    print "Forced Exit:", myrank
+    _mpiKeepIterating = mycomm.bcast(False, root = 0)
+    print "GOODBYE"
+    exit()
 
 
 
