@@ -49,6 +49,9 @@ mycommsize = None
 if _allowMPI:
     from mpi4py import MPI
 
+# If true, time profile lnL eval by multiple iterations and averaging. DO NOT FIT in this case
+_timeProfile = False
+
 def log_gaussian_fn(x, mean, sigma):
     result = -1.*0.5*np.power(x-mean, 2)/(np.power(sigma,2)) #+ amp
     print "Considering: ", mean, sigma, " with result:", result
@@ -296,6 +299,15 @@ def boostFlux(catalogue, images):
 
     return catalogue, images
 
+def SHUTDOWN():
+
+    global _mpiKeepIterating
+    if _allowMPI:
+        print "Forced Exit:", myrank
+        _mpiKeepIterating = mycomm.bcast(False, root = 0)
+    print "GOODBYE"
+    exit()
+
 if __name__ == "__main__":
 
     lnLFunc = logLikelihood_MPI
@@ -444,16 +456,30 @@ if __name__ == "__main__":
     # Start looping lnL update for non-leader rank. For all non-leader ranks, this first call sets up a loop
     # which is used to keep updating the log-likelihood for the parameter value set by the leader.
     # NOTE: This might complicate the interpretation when non-global parameters are fit, e.g. centroiding etc
+    disc = lnLFunc(magnification, *args)
 
-    # Testing: Check lnLikelihood at truth, and at value different to truth
-    # Note, these will be different for n > 1, as other threads contribute to lnL in above
-    #print "check lnL:", logLikelihood(magnification, *args)
-    print "lnL at truth: ", lnLFunc(magnification, *args)
+    if myrank == 0:
+        print "** lnL at truth:", disc
 
     # Everything after this should be rank 0 only
     if myrank != 0:
         print "Exiting rank:", myrank
         exit()
+
+    # Testing: Check lnLikelihood at truth, and at value different to truth
+    # Note, these will be different for n > 1, as other threads contribute to lnL in above
+    #print "check lnL:", logLikelihood(magnification, *args)
+    if _timeProfile:
+        print '\n\n\n TIME PROFILING'
+        import time
+        nIteration = 20
+        rand = np.random.normal(1., 0.01, nIteration)
+        t1 = time.time()
+        for i in range(nIteration): print "lnL at truth: ", lnLFunc(rand[i]*magnification, *args)
+        t2 = time.time()
+        print "Time taken for lnL:", t2-t1, (t2-t1)/nIteration
+        SHUTDOWN()
+
 
     print "lnL at 2x truth: ", lnLFunc(2.*magnification, *args)
     # Note, these will be different for n > 1, as other threads contribute to lnL in above
@@ -571,10 +597,11 @@ if __name__ == "__main__":
         ax.errorbar(fitMu, [0.5], xerr = errorEst, marker = "x")
         pl.show()
 
-    print "Forced Exit:", myrank
-    _mpiKeepIterating = mycomm.bcast(False, root = 0)
-    print "GOODBYE"
-    exit()
+    SHUTDOWN()
+    #print "Forced Exit:", myrank
+    #_mpiKeepIterating = mycomm.bcast(False, root = 0)
+    #print "GOODBYE"
+    #exit()
 
 
 
