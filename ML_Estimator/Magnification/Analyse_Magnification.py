@@ -39,7 +39,6 @@ _optMethod = "brent"
 # used to set brent bracketing, and gaussian error fit guess
 _postWidthGuess = 0.01
 
-_nThreads = 1 # Not used
 _allowMPI = True
 _mpiKeepIterating = True
 _mpiUpdatedParameters = True
@@ -164,6 +163,39 @@ class iteratorStore(object):
         return np.array(self.iteration), np.array(self.func)
 
 
+def deblend_and_match(directory = "", imageFile = "", matchCatalogue = ""):
+
+    import subprocess
+    import shutil
+
+    cfgDir = os.path.join(os.path.abspath(os.getcwd()), "storage/SourceExtractorCfg/")
+    cfgFiles = ["default.sex", "default.param", "default.conv"]
+
+    CATALOGUEFILE = "SrcEx_Deblended_Catalogue.cat"
+    LOGFILE = "SrcEx.LOG"
+
+    # Copy source extractor files to source directory
+    for cfgFile in cfgFiles:
+        file = os.path.join(cfgDir, cfgFile)
+        assert os.path.isfile(file), "deblend_and_match: Config Files (source extractor) not found (%s)"%(file)
+        shutil.copy(file, directory)
+
+    # -------- Run source extractor
+    CWD = os.getcwd()
+
+    # Move directory to where sources reside
+    os.chdir(directory)
+
+    # Run source extractor
+    args = ("sex", imageFile, "-CATALOG_NAME "+CATALOGUEFILE)
+    subprocess.call(args, stdout=open(LOGFILE, "w"), stderr=subprocess.STDOUT)
+
+    # Move back to working directory
+    os.chdir(CWD)
+
+    # --------- Match Source Extractor output to input catalogue
+
+    return 0.
 
 def logLikelihood_MPI(mu, images, icovs, catalogue, signMod = +1, normalisation = 0., itStore = None,
                       asReduced = False):
