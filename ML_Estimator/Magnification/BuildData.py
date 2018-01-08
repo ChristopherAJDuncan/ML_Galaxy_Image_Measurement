@@ -314,7 +314,9 @@ def buildData(nGalaxy = 10000, magnification = 1., directory = ""):
         ## Output as a function of iteration
         if i == Numb_real-1 or i%iterOutput == 0:
             catalogue["nGal"] = i
+            print "Saving to: ", catFilename
             io.save_dict_to_hdf5(catFilename, catalogue)
+            print "Saved successfully"
 
             #data["nGal"] = i #This screws up MEF output, required for h5 readin of data (could use catalogue info)
             io.save_dict_to_hdf5(dataFilename, copy.deepcopy(data))
