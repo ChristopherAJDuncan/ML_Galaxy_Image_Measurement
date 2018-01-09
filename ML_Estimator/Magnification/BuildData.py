@@ -35,7 +35,6 @@ stamp_size = np.array([110, 110])
 stamp_pad = np.array([40, 40])
 
 euclidPixelSize = 0.1  # ''
-ngal = 30  # per sq arcmin
 
 # Puts selection critira on Gems data
 to_del = []
@@ -271,7 +270,7 @@ def magnify_Catalogue(mu, catalogue):
 
     return catalogue
 
-def buildData(nGalaxy = 10000, magnification = 1., directory = ""):
+def buildData(nGalaxy = 10000, magnification = 1., ngal = 30, directory = ""):
     ### Defines the common variables to all cores ###
     import mypylib.utils.io as io
     from collections import OrderedDict
@@ -296,7 +295,7 @@ def buildData(nGalaxy = 10000, magnification = 1., directory = ""):
     catalogue = {"ngalim":ngalim}
     data = OrderedDict()
     lensed = OrderedDict()
-    iterOutput = 100000
+    iterOutput = 1000000
 
     strMu = str(magnification)
 
@@ -312,18 +311,22 @@ def buildData(nGalaxy = 10000, magnification = 1., directory = ""):
                                                         outputImage=False, sbProfileFunc=None)
 
         ## Output as a function of iteration
-        if i == Numb_real-1 or i%iterOutput == 0:
-            catalogue["nGal"] = i
-            io.save_dict_to_hdf5(catFilename, catalogue)
-
+        #if i == Numb_real-1 or i%iterOutput == 0:
+    catalogue["nGal"] = i
+    print "Saving catalogue to :", catFilename
+    io.save_dict_to_hdf5(catFilename, catalogue)
+    print ".. Done cat io"
+    
             #data["nGal"] = i #This screws up MEF output, required for h5 readin of data (could use catalogue info)
-            io.save_dict_to_hdf5(dataFilename, copy.deepcopy(data))
-
-
-
-            lensed["nGal"] = i
-            io.save_dict_to_hdf5(lensedFilename, lensed)
-
+    print "Saving data to : ", dataFilename
+    io.save_dict_to_hdf5(dataFilename, copy.deepcopy(data))
+    print "...Done data io"
+    
+    
+    lensed["nGal"] = i
+    print "Saving lensed cat to: ", lensedFilename
+    io.save_dict_to_hdf5(lensedFilename, lensed)
+    print "... Done lensed IO"
 
     # Final output of MEF data version: not sure why this doesn't work with interim: could it be pointer
     # issues with data dictionary?

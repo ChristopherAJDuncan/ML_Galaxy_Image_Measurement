@@ -1,4 +1,4 @@
-#!/Users/Ocelot/anaconda/bin/python
+#!/usr/local/shared/python/2.7.6-gcc/bin/python
 
 
 import os
@@ -15,6 +15,7 @@ import python.model_Production as modPro
 import BuildData
 
 saveAll = True
+debug = False
 # If true, take a brute force evaluation of the posterior and compare to estimate found
 mlComparisonPlot = False
 
@@ -23,8 +24,8 @@ directory = "./storage/"
 noiseDict = {"sky":114.,
              "readnoise":5.4,
              "gain":3.5}
-fluxBoost = 10.e0
-nGalaxy = 200
+fluxBoost = 1.e0
+nGalaxy = 10000
 
 # Degrees of freedom is determined later
 rankDOF = None
@@ -344,13 +345,14 @@ if __name__ == "__main__":
 
     lnLFunc = logLikelihood_MPI
 
-    if len(sys.argv) != 2:
-        raise RuntimeError("Please enter magnification factor as first argument")
+    if len(sys.argv) != 3:
+        raise RuntimeError("Please enter magnification factor as first argument,  ngal (/arcmin^2) as second argument")
 
     magnification = float(sys.argv[1])
+    ngal = float(sys.argv[2])
 
     # Alter directory to reflect input
-    directory = os.path.join(directory, "mu_"+str(magnification))
+    directory = os.path.join(directory, "mu_"+str(magnification)+"__ngal_"+str(ngal))
 
     #global mycomm, myrank, mycommsize
     if _allowMPI:
@@ -367,13 +369,14 @@ if __name__ == "__main__":
     else:
         myrank = 0
 
+    print "Creating directory: ", directory
     io.mkdirs(directory)
 
     print "Running magnification factor: ", magnification
 
     # --------------------------------------- Generate Data ---------------------------------------------------------- #
 
-    BuildData.buildData(nGalaxy=nGalaxy, magnification=magnification, directory=directory)
+    BuildData.buildData(nGalaxy=nGalaxy, magnification=magnification, directory=directory, ngal = ngal)
 
     strMu = str(magnification)
 
@@ -395,7 +398,7 @@ if __name__ == "__main__":
                                     copy.deepcopy(data))
 
     # -------------------- Combine data into identical images, based on Poisson Distribution ------------------------- #
-    blendedImages, blendedCatalogue = combine_Images(data, catalogue, saveAll)
+    blendedImages, blendedCatalogue = combine_Images(data, catalogue, save = False)
     print ".. Produced ", len(blendedImages), " blended images"
 
     # ----------------------------------  Add Noise to the images ---------------------------------------------------- #
@@ -414,11 +417,12 @@ if __name__ == "__main__":
         noisyBlendedImages[key] = noiseMod.add_PN_Noise(copy.deepcopy(val), **noiseDict)
     print ".. Produced ", len(noisyBlendedImages.keys()), " noisy blended images"
 
-    noiseCheck = collections.OrderedDict()
-    for key, val in noisyBlendedImages.iteritems():
-        noiseCheck[key] = val - blendedImages[key]
+    if debug:
+        noiseCheck = collections.OrderedDict()
+        for key, val in noisyBlendedImages.iteritems():
+            noiseCheck[key] = val - blendedImages[key]
 
-    io.output_images_to_MEF(os.path.join(directory,"Noisy_Blended_Images_CHECK_"+strMu+".fits"), noiseCheck.values())
+            io.output_images_to_MEF(os.path.join(directory,"Noisy_Blended_Images_CHECK_"+strMu+".fits"), noiseCheck.values())
 
     if saveAll:
         filename = os.path.join(directory,"Noisy_Blended_Images_"+strMu+".fits")
@@ -579,6 +583,7 @@ if __name__ == "__main__":
     #listargs = list(args); listargs.append(fitMu[0]); args = tuple(listargs)
 
     # Get Fisher Estimate of uncertainty
+    reFitMu = -99
     if _errorType.lower() == "fisher":
         print "Getting FM...", fitMu
         from mypylib.stats.distributions import fisher_matrix
@@ -610,11 +615,20 @@ if __name__ == "__main__":
         #print "FIT CHECK:", log_gaussian_fn(x, *popt)
         #raw_input("Check")
         errorEst = popt[1]
+        reFitMu = popt[0]
     else:
         raise ValueError("No Error Estimate taken")
 
     kwargs["asReduced"] = False
     args = tuple(kwargs.values())
+
+    # Output the result
+    oDict = {}
+    oDict["input_mu"] = magnification
+    oDict["mu_ML"] = fitMu
+    oDict["errorEst"] = errorEst
+    oDict["reFitMu"] = reFitMu
+    io.save_dict_to_hdf5(os.path.join(directory, "RESULTS.h5"), oDict)
 
     if mlComparisonPlot:
         # -- Plot it using a brute force resampling -- this is really testing only
