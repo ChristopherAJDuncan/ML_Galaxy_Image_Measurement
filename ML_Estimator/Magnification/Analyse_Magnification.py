@@ -38,7 +38,7 @@ _errorType = "fitGauss"
 _optMethod = "brent"
 
 # used to set brent bracketing, and gaussian error fit guess
-_postWidthGuess = 0.01
+_postWidthGuess = 0.05
 
 _allowMPI = True
 _mpiKeepIterating = True
@@ -116,13 +116,18 @@ def combine_Images(data,catalogue, save = True):
 
     print " "
 
+
     return combinedImages, combinedCatalogue
 
 def apply_magnification(mu, catalogue):
 
 
     for image in range(catalogue["nImage"]):
+        if not str(image) in catalogue:
+            continue
         for igalaxy in range(catalogue[str(image)]["nGal"]):
+            if not str(igalaxy) in catalogue[str(image)]:
+                continue
             galaxy = catalogue[str(image)][str(igalaxy)]
             #galaxy["SB"]["size"] = np.sqrt(mu)*galaxy["SB"]["size"]
             galaxy["SB"]["flux"] = mu*galaxy["SB"]["flux"]
@@ -164,7 +169,7 @@ class iteratorStore(object):
         return np.array(self.iteration), np.array(self.func)
 
 
-def deblend_and_match(directory = "", imageFile = "", matchCatalogue = ""):
+def deblend_and_match(directory = "", imageFile = "", matchCatalogue = None):
 
     import subprocess
     import shutil
@@ -196,7 +201,56 @@ def deblend_and_match(directory = "", imageFile = "", matchCatalogue = ""):
 
     # --------- Match Source Extractor output to input catalogue
 
-    return 0.
+    # Read in catalogue
+    SECat = np.genfromtxt(os.path.join(directory, CATALOGUEFILE))
+
+    print "Successfully read in catalogue, with ", len(SECat), "sources"
+
+    # @@ CHECK ME: This should match SrcEx output
+    xColDex = 3
+    yColDex = xColDex + 1
+
+    extColDex = 1
+
+    distCut = 3. # Pixels
+
+    from mypylib.utils.numutils import pythLineDistance
+
+    deblendedCat = copy.deepcopy(matchCatalogue)
+
+    # Match based on input catalogue, and limit on flux
+    from scipy import spatial
+    for imageDex in range(matchCatalogue["nImage"]):
+        # Isolate only those sources in the extension
+        extSources = SECat[SECat[:,extColDex] == imageDex + 1,:]
+
+        if len(extSources) == 0:
+            print "All sources cut from ext: ", imageDex, " with ", matchCatalogue[str(imageDex)]["nGal"], " expected"
+            del deblendedCat[str(imageDex)]
+            continue
+
+        keepCount = 0
+        for igal in range(matchCatalogue[str(imageDex)]["nGal"]):
+            centroid = matchCatalogue[str(imageDex)][str(igal)]["centroid"]
+            dist = pythLineDistance(extSources[:, xColDex] - centroid[0],
+                                    extSources[:, yColDex] - centroid[1])
+            # Get distance for all points
+
+            if (dist <= distCut).sum() == 0:
+                del deblendedCat[str(imageDex)][str(igal)]
+            else:
+                keepCount += 1
+
+        if keepCount < matchCatalogue[str(imageDex)]["nGal"]:
+            print matchCatalogue[str(imageDex)]["nGal"]-keepCount, " of ", matchCatalogue[str(imageDex)]["nGal"], \
+                   "sources cut from ext: ", imageDex
+
+        assert keepCount <= matchCatalogue[str(imageDex)]["nGal"], "deblend: More sources found on deblending," \
+                                                              " this cant happen" \
+                                                              "in this application"
+
+
+    return deblendedCat
 
 def logLikelihood_MPI(mu, images, icovs, catalogue, signMod = +1, normalisation = 0., itStore = None,
                       asReduced = False):
@@ -290,12 +344,25 @@ def logLikelihood(mu, images, icovs, catalogue, signMod = +1, normalisation = 0.
     # For each source, construct the model and then use to get log-likelihood
     lnL = 0
     for i in range(imageBound[0], imageBound[1],1):
+
+        # If an image has been removed form the catalogue (e.g. in deblending)
+        if not str(i) in lensed:
+            continue
+
         model = np.zeros_like(images[str(i)])
+
+        modelCount = -1
         for g in range(lensed[str(i)]['nGal']):
+
+            # If a source has been removed (e.g. due to deblending)
+            if not str(g) in lensed[str(i)]:
+                continue
+
+            modelCount += 1
             galaxy = lensed[str(i)][str(g)]
             singleModel, disc = modPro.get_Pixelised_Model(galaxy, noiseType=None, Verbose=False,
                                                            outputImage=False, sbProfileFunc=None)
-            if g == 0:
+            if modelCount == 0:
                 model = singleModel
             else:
                 model += singleModel
@@ -451,7 +518,8 @@ if __name__ == "__main__":
         print ".. Output noisy individual images to %s" % (filename)
 
     # --------------------------------------- Deblend ---------------------------------------------------------------- #
-
+    deblendedCatalogue = deblend_and_match(directory=directory, imageFile="Noisy_Blended_Images_"+strMu+".fits",
+                                           matchCatalogue=blendedCatalogue)
 
     # ------------------------------- Measure the magnification ------------------------------------------------------ #
     if _allowMPI: mycomm.Barrier()
@@ -463,7 +531,7 @@ if __name__ == "__main__":
     kwargs = collections.OrderedDict()
     kwargs["images"] = noisyBlendedImages
     kwargs["icovs"] = icovs
-    kwargs["catalogue"] = blendedCatalogue
+    kwargs["catalogue"] = deblendedCatalogue
     kwargs["signMod"] = +1
     kwargs["normalisation"] = 0.
     if myrank == 0:
@@ -476,7 +544,7 @@ if __name__ == "__main__":
 
 
     ## Determine the degrees of freedom
-    rankDOF = len(blendedCatalogue)*np.prod(noisyBlendedImages["0"].shape)*np.ones(1)
+    rankDOF = len(deblendedCatalogue)*np.prod(noisyBlendedImages["0"].shape)*np.ones(1)
     if _allowMPI:
         DOF = np.zeros(1)
         mycomm.Reduce(rankDOF, DOF, root = 0)
@@ -484,7 +552,7 @@ if __name__ == "__main__":
     else:
         DOF = rankDOF[0]
 
-    print 'nData:', rankDOF, " for rank:", myrank, " with nimage:", len(blendedCatalogue)
+    print 'nData:', rankDOF, " for rank:", myrank, " with nimage:", len(deblendedCatalogue)
 
     if myrank == 0:
         print "Degrees of freedom is: ", DOF

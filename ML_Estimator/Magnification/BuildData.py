@@ -310,13 +310,12 @@ def buildData(nGalaxy = 10000, magnification = 1., ngal = 30, directory = ""):
         data[str(i)], disc = modPro.get_Pixelised_Model(lensed[str(i)], noiseType=None, Verbose=False,
                                                         outputImage=False, sbProfileFunc=None)
 
-        ## Output as a function of iteration
-        #if i == Numb_real-1 or i%iterOutput == 0:
+    ## Output
     catalogue["nGal"] = i
     print "Saving catalogue to :", catFilename
     io.save_dict_to_hdf5(catFilename, catalogue)
     print ".. Done cat io"
-    
+
             #data["nGal"] = i #This screws up MEF output, required for h5 readin of data (could use catalogue info)
     print "Saving data to : ", dataFilename
     io.save_dict_to_hdf5(dataFilename, copy.deepcopy(data))
