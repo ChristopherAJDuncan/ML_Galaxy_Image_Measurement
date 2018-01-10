@@ -34,6 +34,7 @@ stamp_size = np.array([110, 110])
 # size area
 stamp_pad = np.array([40, 40])
 
+gemsPixelSize = 0.03  # arcseconds, this is to rescale the dist to be 'Euclid-like'.
 euclidPixelSize = 0.1  # ''
 ngal = 30  # per sq arcmin
 
@@ -114,7 +115,7 @@ def getRandData(catData, size=None, centered='n'):
 
 	galDict: A dictionary in the standard form with all parameters randomly sampled from the GEMS catalogue
 	"""
-    gemsPixelSize = 0.03  # arcseconds, this is to rescale the dist to be 'Euclid-like'.
+
 
     galDict = modPro.default_ModelParameter_Dictionary()
     galDict["PSF"]["PSF_Type"] = 2  # 2: Airy
@@ -289,9 +290,23 @@ def buildData(nGalaxy = 10000, magnification = 1., directory = ""):
     Gems_data = [row for row in Gems_data]
     out.close()
 
+    #Gems_size = [Gems_data[i][3] for i in range(1, len(Gems_data))]
+    #Gems_size = np.array(Gems_size).astype(np.float64)
+    #print "mean log-size: ", np.mean(np.log(Gems_size))
+    #raw_input("Check")
+
+    # Note GEMS mean log-Size is ~2.5, which means that mean size is roughly 12 pixels
+
     for x in Gems_data[1:]:
         if (x[11] == '0'):  # or (float(x[4])/float(x[3])>0.1): #or (math.log(0.03*float(x[3]))>(-1.077+1.9*0.641) or math.log(0.03*float(x[3]))<(-1.077-1.9*0.641)):
             Gems_data.remove(x)
+        #if(x[3] < 0.11/gemsPixelSize): #Lower size cut, roughly 4 pixels
+        #    Gems_data.remove(x)
+
+    #Gems_size = [Gems_data[i][3] for i in range(1, len(Gems_data))]
+    #Gems_size = np.array(Gems_size).astype(np.float64)
+    #print "mean log-size: ", np.mean(np.log(Gems_size))
+    #raw_input("Check")
 
     catalogue = {"ngalim":ngalim}
     data = OrderedDict()
