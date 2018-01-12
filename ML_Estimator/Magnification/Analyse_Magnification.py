@@ -1,6 +1,14 @@
 #!/usr/local/shared/python/2.7.6-gcc/bin/python
 
 
+"""
+TODO:
+-- Add sanity check on deblend routine to ensure no mix up with columns
+-- Check GEMS size -> galsim size determination
+-- Add size cut as Hoekstra
+-- Investigate instances where sources are cut, ensure that distance cut is appropriate
+"""
+
 import os
 import sys
 sys.path.insert(0, os.path.abspath("../"))
@@ -21,15 +29,18 @@ memManage = "severe"
 debug = False
 # If true, take a brute force evaluation of the posterior and compare to estimate found
 mlComparisonPlot = False
+_verbose = False
 
 doDeblend = True
 
 #directory = "./storage/TEST/"
 directory = "./storage/SE_deblend/n10_4__fluxBoost_100/"
 
+
 noiseDict = {"sky":114.,
              "readnoise":5.4,
              "gain":3.5}
+
 fluxBoost = 100.e0
 nGalaxy = 10000
 
@@ -226,6 +237,8 @@ def deblend_and_match(directory = "", imageFile = "", matchCatalogue = None):
 
     # Match based on input catalogue, and limit on flux
     from scipy import spatial
+    totalGalInput = 0
+    totalKept = 0
     for imageDex in range(matchCatalogue["nImage"]):
         # Isolate only those sources in the extension
         extSources = SECat[SECat[:,extColDex] == imageDex + 1,:]
@@ -243,18 +256,30 @@ def deblend_and_match(directory = "", imageFile = "", matchCatalogue = None):
             # Get distance for all points
 
             if (dist <= distCut).sum() == 0:
+
+                if _verbose:
+                    print " "
+                    print "Cutting ", str(igal), deblendedCat[str(imageDex)][str(igal)]
+                    print "Distance: ", dist
+                    print "In SE cat: ", extSources
+                    print " "
+
                 del deblendedCat[str(imageDex)][str(igal)]
             else:
                 keepCount += 1
 
+        totalGalInput += matchCatalogue[str(imageDex)]["nGal"]
+        totalKept += keepCount
         if keepCount < matchCatalogue[str(imageDex)]["nGal"]:
             print matchCatalogue[str(imageDex)]["nGal"]-keepCount, " of ", matchCatalogue[str(imageDex)]["nGal"], \
-                   "sources cut from ext: ", imageDex
+                   "sources cut from ext: ", imageDex + 1
 
         assert keepCount <= matchCatalogue[str(imageDex)]["nGal"], "deblend: More sources found on deblending," \
                                                               " this cant happen" \
                                                               "in this application"
 
+
+    print "Finished deblending: Kept ", totalKept, ' of ', totalGalInput, " input galaxies"
 
     return deblendedCat
 
