@@ -14,17 +14,23 @@ import collections
 import python.model_Production as modPro
 import BuildData
 
-saveAll = True
+import gc
+
+saveAll = False
+memManage = "severe"
 debug = False
 # If true, take a brute force evaluation of the posterior and compare to estimate found
 mlComparisonPlot = False
 
-directory = "./storage/"
+doDeblend = True
+
+#directory = "./storage/TEST/"
+directory = "./storage/SE_deblend/n10_4__fluxBoost_100/"
 
 noiseDict = {"sky":114.,
              "readnoise":5.4,
              "gain":3.5}
-fluxBoost = 1.e0
+fluxBoost = 100.e0
 nGalaxy = 10000
 
 # Degrees of freedom is determined later
@@ -399,6 +405,17 @@ def boostFlux(catalogue, images):
 
     return catalogue, images
 
+def CLEAN_DIRECTORY(filestodelete, directory = ""):
+    """
+    Delete all files in filestodelete
+    """
+
+
+    for files in filestodelete:
+        path = os.path.join(directory, files)
+        if os.path.isfile(path):
+            os.remove(path)
+
 def SHUTDOWN():
 
     global _mpiKeepIterating
@@ -411,6 +428,9 @@ def SHUTDOWN():
 if __name__ == "__main__":
 
     lnLFunc = logLikelihood_MPI
+
+    # Store names of files to clear out
+    toClean = []
 
     if len(sys.argv) != 3:
         raise RuntimeError("Please enter magnification factor as first argument,  ngal (/arcmin^2) as second argument")
@@ -426,6 +446,14 @@ if __name__ == "__main__":
         mycomm = MPI.COMM_WORLD
         myrank = mycomm.Get_rank()
         mycommsize = mycomm.Get_size()
+
+        # Build shared parent directory
+        if(myrank == 0):
+            for i in range(int(mycommsize)):
+                rankDir = os.path.join(directory, "MPIRank"+str(i))
+                io.mkdirs(rankDir)
+        mycomm.Barrier()
+
         # If using MPI, then process all the data separately
         directory = os.path.join(directory, "MPIRank"+str(myrank))
 
@@ -435,9 +463,8 @@ if __name__ == "__main__":
 
     else:
         myrank = 0
-
-    print "Creating directory: ", directory
-    io.mkdirs(directory)
+        print "Creating directory: ", directory
+        io.mkdirs(directory)
 
     print "Running magnification factor: ", magnification
 
@@ -451,6 +478,8 @@ if __name__ == "__main__":
     inputDataFile = os.path.join(directory,"GEMS_sampled_data_lensed_"+strMu+".h5")
     inputCatalogueFile = os.path.join(directory,"GEMS_sampled_catalogue_unlensed_"+strMu+".h5")
 
+    toClean.append(os.path.join(directory,"GEMS_sampled_data_lensed_"+strMu+".h5"))
+
     # Read in the data
     data = io.load_dict_from_hdf5(inputDataFile)
     print "... Loaded Data"
@@ -459,14 +488,24 @@ if __name__ == "__main__":
 
     print "Loaded ", catalogue['nGal'], " galaxy images"
 
+    # Intermittent directory clean
+    if not saveAll:
+        CLEAN_DIRECTORY(toClean)
+        toClean = []
+
+
     # Boost the flux for magnification measurement
-    if fluxBoost > 1.:
-        catalogue, data = boostFlux(copy.deepcopy(catalogue),
-                                    copy.deepcopy(data))
+    #if fluxBoost > 1.:
+    #    catalogue, data = boostFlux(copy.deepcopy(catalogue),
+    #                                copy.deepcopy(data))
 
     # -------------------- Combine data into identical images, based on Poisson Distribution ------------------------- #
     blendedImages, blendedCatalogue = combine_Images(data, catalogue, save = False)
     print ".. Produced ", len(blendedImages), " blended images"
+
+    if memManage.lower() == "severe":
+        del data, catalogue
+        gc.collect()
 
     # ----------------------------------  Add Noise to the images ---------------------------------------------------- #
 
@@ -479,10 +518,15 @@ if __name__ == "__main__":
     for key, image in blendedImages.iteritems():
         icovs.append( 1./noiseMod.estimate_PN_noise(copy.deepcopy(image), **noiseDict) )
 
+    # Obtain random state for reproductability
+    randState = np.random.get_state()
+    noiseDict["state"] = randState
+
     noisyBlendedImages = collections.OrderedDict()
     for key, val in blendedImages.iteritems():
         noisyBlendedImages[key] = noiseMod.add_PN_Noise(copy.deepcopy(val), **noiseDict)
     print ".. Produced ", len(noisyBlendedImages.keys()), " noisy blended images"
+
 
     if debug:
         noiseCheck = collections.OrderedDict()
@@ -491,15 +535,20 @@ if __name__ == "__main__":
 
             io.output_images_to_MEF(os.path.join(directory,"Noisy_Blended_Images_CHECK_"+strMu+".fits"), noiseCheck.values())
 
-    if saveAll:
-        filename = os.path.join(directory,"Noisy_Blended_Images_"+strMu+".fits")
-        io.output_images_to_MEF(filename, noisyBlendedImages.values())
-        #io.save_dict_to_hdf5(filename, noisyBlendedImages)
-        print ".. Output noisy blended images to %s" % (filename)
+    filename = os.path.join(directory,"Noisy_Blended_Images_"+strMu+".fits")
+    io.output_images_to_MEF(filename, noisyBlendedImages.values())
+    #io.save_dict_to_hdf5(filename, noisyBlendedImages)
+    print ".. Output noisy blended images to %s" % (filename)
+    toClean.append(filename)
+
+    if memManage.lower() == "severe" and not fluxBoost > 1.:
+        del blendedImages
+        gc.collect()
 
     ## ------- For unblended images --------
 
     # Get icovs, which is inverse covariance of the observed source
+    """
     import python.noiseDistributions as noiseMod
     import copy
     indIcovs = []
@@ -511,15 +560,45 @@ if __name__ == "__main__":
         noisyIndImages[key] = noiseMod.add_PN_Noise(copy.deepcopy(val), **noiseDict)
     print ".. Produced ", len(noisyIndImages.keys()), " noisy individual images"
 
-    if saveAll:
-        filename = os.path.join(directory,"Noisy_Individual_Images_"+strMu+".fits")
-        io.output_images_to_MEF(filename, noisyIndImages.values())
-        #io.save_dict_to_hdf5(filename, noisyBlendedImages)
-        print ".. Output noisy individual images to %s" % (filename)
+
+    filename = os.path.join(directory,"Noisy_Individual_Images_"+strMu+".fits")
+    io.output_images_to_MEF(filename, noisyIndImages.values())
+    #io.save_dict_to_hdf5(filename, noisyBlendedImages)
+    print ".. Output noisy individual images to %s" % (filename)
+    toClean.append(filename)
+    """
+
+    # Intermittent directory clean
+    if not saveAll:
+        CLEAN_DIRECTORY(toClean)
+        toClean = []
 
     # --------------------------------------- Deblend ---------------------------------------------------------------- #
-    deblendedCatalogue = deblend_and_match(directory=directory, imageFile="Noisy_Blended_Images_"+strMu+".fits",
-                                           matchCatalogue=blendedCatalogue)
+    if doDeblend:
+        deblendedCatalogue = deblend_and_match(directory=directory, imageFile="Noisy_Blended_Images_"+strMu+".fits",
+                                               matchCatalogue=blendedCatalogue)
+    else:
+        deblendedCatalogue = copy.deepcopy(blendedCatalogue)
+
+    if fluxBoost > 1.:
+        #Reconstruct the noisy blended images accounting for the fact that the flux has been boosted
+        # NOTE: fluxBoost used here just boosts the statistical power frm each image to the fit. As the flux was not boosted for
+        # for the deblending application, any bias should remain
+        #TODO: Need to ensure that the noise is generated from the same seed
+
+        ## Originally copy.deepcopy
+        deblendedCatalogue, blendedImages  = boostFlux(deblendedCatalogue,
+                                                       blendedImages)
+
+        assert "state" in noiseDict, "fluxBoost is requested, but random number generator state not supplied"
+
+        # Re-add the noise: state should be supplied to ensure the same noise is added
+        for key, val in blendedImages.iteritems():
+            noisyBlendedImages[key] = noiseMod.add_PN_Noise(copy.deepcopy(val), **noiseDict)
+            
+        if memManage.lower() == "severe":
+            del blendedImages, blendedCatalogue
+            gc.collect()
 
     # ------------------------------- Measure the magnification ------------------------------------------------------ #
     if _allowMPI: mycomm.Barrier()
@@ -710,6 +789,9 @@ if __name__ == "__main__":
         ax.plot(x, np.exp(lnL-np.max(lnL)))
         ax.errorbar(fitMu, [0.5], xerr = errorEst, marker = "x")
         pl.show()
+
+    if not saveAll:
+        CLEAN_DIRECTORY(toClean)
 
     SHUTDOWN()
     #print "Forced Exit:", myrank

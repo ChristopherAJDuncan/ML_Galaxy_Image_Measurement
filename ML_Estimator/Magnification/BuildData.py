@@ -329,11 +329,13 @@ def buildData(nGalaxy = 10000, magnification = 1., ngal = 30, directory = ""):
 
     # Final output of MEF data version: not sure why this doesn't work with interim: could it be pointer
     # issues with data dictionary?
+    """
     dataFilename = os.path.splitext(dataFilename)[0] + ".fits"
     print "Calling MEF2", dataFilename
     io.output_images_to_MEF(dataFilename
                              , data.values())
     print "Called MEF2"
+    """
 
     print "Finished Building Data. Output files to: "
     print catFilename

@@ -118,15 +118,22 @@ def inverse_Sample(xt,ft, nSamples = 1):
     #Sample
     return res
 
-def add_PN_Noise(vals, readnoise, gain, sky):
+def add_PN_Noise(vals, readnoise, gain, sky, returnState = False, state = None):
     """
     Return the image (in photons) as observed through the telescope, adding noise processes
     :param vals:
     :param readout:
     :param gain:
     :param sky:
+    :
     :return:
     """
+
+    if state is not None:
+        np.random.set_state(state)
+
+    if returnState:
+        state = np.random.RandomState()
 
     valsShape = vals.shape
     vals = vals.flatten()
@@ -148,7 +155,13 @@ def add_PN_Noise(vals, readnoise, gain, sky):
     vals = gain * ( (1000. + vals/gain + 0.5).astype(np.int) - 1000.)
 
     # Reshape back into input
-    return vals.reshape(valsShape)
+    res = vals.reshape(valsShape)
+
+    if(returnState):
+        res = [res, state]
+
+
+    return res
 
 def estimate_PN_noise(vals, readnoise, gain, sky):
     """
